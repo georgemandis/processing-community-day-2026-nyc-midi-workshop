@@ -1,19 +1,19 @@
 # Processing Community Day NYC 2026: the MIDI workshop
 
 Devices send signals. MIDI is a three-byte protocol every OS already understands. A MIDI
-controller is an instrument for anything: a drawing, a simulation, a game.
+controller is an instrument for anything: a drawing, a simulation, a game. MIDI is dead. Long live MIDI!!
 
-This repo is what you clone for the workshop. Docs, slides and the hardware pages are on the
-site: https://pcd2026.mand.is
+Please clone this repo for the workshop. Docs, slides and the hardware pages live at https://pcd2026.mand.is
 
-## You need
+## What you'll need
 
-- Processing 4. For Python: mode menu (top right), Manage Modes, Python Mode.
-- Chrome, Edge or Opera for the p5.js versions. Web MIDI is not in Firefox or Safari.
-- A controller. Plug it in before you press Run. Plain Processing sketches only see devices
+- Either
+  - Processing 4. For Python: mode menu (top right), Manage Modes, Python Mode.
+  - Chrome, Edge or Opera for the p5.js versions. WebMIDI is not in Firefox or Safari.
+- A MIDI controller! I brought some for the workshop. Plug it in before you press Run. Plain Processing sketches only see devices
   connected at start.
 
-Nothing to install beyond Processing. The helpers use Java's own MIDI.
+Nothing to install beyond Processing. 
 
 ## What is here
 
@@ -34,9 +34,9 @@ Processing: File, Open, the `.pde` or `.pyde`. Plug the device in. Run. The cons
 MIDI ports it found.
 
 p5: serve the repo over http from its root, say `python3 -m http.server 8765`, and open
-`http://localhost:8765/starters/p5/pipsqueak/`. Click once to connect.
+`http://localhost:8765/starters/p5/pipsqueak/`. Your browser should ask you if you want to connect to the MIDI device(s).
 
-Every sketch runs without its device. Arrows and space stand in for the PipSqueak, number keys for
+Every sketch runs without its device. Arrows and space stand in for the PipSqueak sometimes, number keys for
 the Circuit Playground, letters for the Midi Fighter.
 
 ## Helpers
@@ -44,6 +44,6 @@ the Circuit Playground, letters for the Midi Fighter.
 Each sketch folder holds copies of the helper tabs it needs. `midi-helpers/` is the source;
 `midi-helpers/sync.sh` copies them. Edit helpers there, not in a sketch.
 
-Devices on the table: useMIDI PipSqueak, Circuit Playground Express with George's multi-tool
-firmware, Midi Fighter Classic, Launchpad Mini MK3, Slide and Rotary Trinkey. The maps are in
+Devices on the table: [useMIDI PipSqueak](https://usemidi.com), Circuit Playground Express with George's [multi-tool
+firmware](https://github.com/georgemandis/circuit-playground-midi-multi-tool), Midi Fighter Classic, Launchpad Mini MK3, Slide and Rotary Trinkey. The maps are in
 `midi-helpers/README.md`.
