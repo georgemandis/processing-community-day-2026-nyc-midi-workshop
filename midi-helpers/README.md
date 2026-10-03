@@ -13,7 +13,7 @@ work in the p5.js web editor.
 | Launchpad Mini MK3 | `Launchpad.pde` | `launchpad.py` | `launchpad.js` | `LPMiniMK3 MIDI` (the MIDI port, not DAW) |
 | Circuit Playground (multi-tool firmware) | `CircuitPlayground.pde` | `circuitplayground.py` | `circuitplayground.js` | `circuit playground` |
 | Slide Trinkey and Rotary Trinkey (firmware in `trinkeys/`) | `Trinkeys.pde` (`SlideTrinkey`, `RotaryTrinkey`) | `trinkeys.py` | `trinkeys.js` | `Slide Trinkey` / `Rotary Trinkey` |
-| anything else | `AnyMidi.pde` | `anymidi.py` | `anymidi.js` | whatever you pass, or the first input |
+| anything else | `AnyMidi.pde` | `anymidi.py` | `anymidi.js` | whatever you pass, or every input |
 | everything at once | - | - | `midi-helpers.js` | - |
 
 ## In the IDE
@@ -75,7 +75,8 @@ opts in with a `.midi-helpers` file listing the helpers it wants, one per line (
 Channels are 1..16 in every call and callback. Status `0x92` is channel 3.
 
 `connect()` prints the inputs and outputs Java sees, opens the first input and first output whose name or
-description contains the substring (any case), and returns a boolean. No match: one line on the console
+description contains the substring (any case), and returns a boolean. An empty name opens every input
+(that is what `AnyMidi` with no name does) and the first output. No match: one line on the console
 and the sketch keeps going. `connected()` means an input is open. The constructor never touches hardware,
 so `new PipSqueak(this)` is fine as a field initializer.
 
@@ -89,8 +90,10 @@ Callbacks work the Processing way. Define a sketch function with the right name 
 helper calls it. Java finds it by reflection, so it must be a top-level sketch function. Python looks in
 the sketch module; pass `callbacks=globals()` if that ever fails. Every helper offers `noteOn(channel,
 note, velocity)`, `noteOff(channel, note, velocity)` and `controlChange(channel, number, value)` (Python:
-`note_on`, `note_off`, `control_change`). Device callbacks are listed per device. Callbacks run on the
-animation thread, before `draw()`.
+`note_on`, `note_off`, `control_change`). Each of those also takes the device name as a trailing
+argument if you declare it: `noteOn(int channel, int note, int velocity, String device)`. The old arity
+keeps working. Device callbacks are listed per device. Callbacks run on the animation thread, before
+`draw()`.
 
 No device? Each helper that has a keyboard stand-in keeps the sketch usable from the keyboard. Details
 per device. Python stand-ins read one key at a time.
@@ -338,23 +341,32 @@ p5: `new SlideTrinkey()`, `new RotaryTrinkey()` with the Java names; `RotaryTrin
 
 ## AnyMidi (`AnyMidi.pde`, `anymidi.py`)
 
-For the NeoTrellis and whatever people bring.
+For the NeoTrellis, whatever people bring, and a desk with four devices on it.
 
 ```java
-AnyMidi m = new AnyMidi(this, "name substring");             // or new AnyMidi(this): first input (and first output)
-m.note(n); m.cc(n);                  // last value seen, 0..127, -1 if never. A note's value is its velocity, 0 after Note Off
+AnyMidi m = new AnyMidi(this);                               // every input, first output
+AnyMidi m = new AnyMidi(this, "name substring");             // one input and one output
+m.connect(); m.status(); m.devices();                        // "listening to 4 inputs: PipSqueak, ..." / the input names
+m.note(n); m.cc(n);                  // last value seen on any input, 0..127, -1 if never. A note's value is its velocity, 0 after Note Off
 m.down(n);                           // note held?
-m.lastNote; m.lastVelocity; m.lastCC; m.lastCCValue; m.lastChannel; m.pitchBend; m.pressure; m.count; m.last
+m.lastNote; m.lastVelocity; m.lastCC; m.lastCCValue; m.lastChannel; m.lastDevice; m.pitchBend; m.pressure; m.count; m.last
 m.send(status, d1, d2); m.noteOn(ch, n, vel); m.noteOff(ch, n); m.controlChange(ch, cc, val);
 m.programChange(ch, p); m.pitchBend(ch, value); m.sysex(bytes);
 ```
-Callbacks: the three generic ones, plus `pitchBend(int channel, int value)` (-8192..8191) and
-`midiMessage(int status, int data1, int data2)` for anything else. `m.last` is a `MidiMsg` with
-`status, type, channel, data1, data2, millis, sysex` and a readable `toString()`. The Explorer prints it.
+With no name it listens to every input at once, so moving any device on the desk shows up. `status()`
+reads `listening to N inputs: names`, or `connected to X` with a name. Sending goes to the first output,
+or the named one.
 
-Python: `AnyMidi(this, name="")`, `m.note(n)`, `m.cc(n)`, `m.down(n)`, `m.last_note`, `m.last_cc`,
-`m.pitch_bend`, `m.count`, `m.last`, `m.send`, `m.note_on`, `m.note_off`, `m.control_change`,
-`m.send_pitch_bend`, `m.sysex`.
+Callbacks: the three generic ones, plus `pitchBend(int channel, int value)` (-8192..8191) and
+`midiMessage(int status, int data1, int data2)` for anything else. Every one of them also accepts a
+trailing `String device`, so `void noteOn(int channel, int note, int velocity, String device)` tells
+you which input it was. Define whichever arity you want. `m.last` is a `MidiMsg` with `status, type,
+channel, data1, data2, millis, sysex, device` and a readable `toString()`. The Explorer prints it.
+
+Python: `AnyMidi(this)` or `AnyMidi(this, "name")`, `m.status`, `m.devices()`, `m.note(n)`, `m.cc(n)`,
+`m.down(n)`, `m.last_note`, `m.last_cc`, `m.last_device`, `m.pitch_bend`, `m.count`, `m.last` (with
+`.device`), `m.send`, `m.note_on`, `m.note_off`, `m.control_change`, `m.send_pitch_bend`, `m.sysex`.
+Callbacks take the trailing `device` if you declare it: `def note_on(channel, note, velocity, device)`.
 
 ## p5.js
 
@@ -408,8 +420,10 @@ Callbacks are global functions: `noteOn(channel, note, velocity)`, `noteOff(...)
 number, value)` from every helper; `stickPressed()` / `stickReleased()`; `padPressed(index)` /
 `padReleased(index)` / `bankChanged(bank)` (Midi Fighter); `padPressed(x, y)` / `padReleased(x, y)` /
 `buttonPressed(id)` / `buttonReleased(id)` (Launchpad); `touchPressed(pad)` / `touchReleased(pad)` /
-`accelChanged()`; `pitchBend(channel, value)` / `midiMessage(status, d1, d2)` (AnyMidi). JavaScript cannot
-overload `padPressed`, so a sketch with both grid devices passes `{ callbacks: {...} }` to one of them.
+`accelChanged()`; `pitchBend(channel, value)` / `midiMessage(status, d1, d2)` (AnyMidi). The generic
+ones get the device name as one more argument: `function noteOn(channel, note, velocity, device)`.
+JavaScript cannot overload `padPressed`, so a sketch with both grid devices passes `{ callbacks: {...} }`
+to one of them.
 Any helper takes `{ callbacks: { padPressed(i) {...} } }` to skip the global lookup (instance mode).
 
 Keyboard stand-ins work while nothing is connected: arrows + SPACE (PipSqueak), `1234 qwer asdf zxcv`
@@ -418,7 +432,7 @@ Keyboard stand-ins work while nothing is connected: arrows + SPACE (PipSqueak), 
 Per device, the surface is the Java one with JS idioms. Constructors take an options object or a name
 string: `new PipSqueak({ name, x: {...}, y: {...}, button: {...}, deadzone, smoothing })` (same JSON
 shape as everywhere else), `new MidiFighter({ name, channel, mode, map })`, `new Launchpad({ name })`,
-`new CircuitPlayground({ name })`, `new AnyMidi("name")` / `new AnyMidi()`.
+`new CircuitPlayground({ name })`, `new AnyMidi("name")` / `new AnyMidi()` (every input).
 
 - `stick.x`, `stick.y`, `stick.angle` (null in the deadzone), `stick.magnitude`, `stick.pressed`,
   `stick.justPressed()`, `stick.justReleased()`, `stick.recenter()`, `stick.flash()`, `stick.send(status,
@@ -435,8 +449,9 @@ shape as everywhere else), `new MidiFighter({ name, channel, mode, map })`, `new
   restores Live mode. `Launchpad.toColor(c)`, `Launchpad.xyToNote` and the rest are exposed.
 - `cpx.touch(i)`, `cpx.accel.x/y/z`, `cpx.light`, `cpx.sound`, `cpx.temperature`, `cpx.sensor`,
   `cpx.mode`, `cpx.pixels(r, g, b)`, `cpx.clear()`.
-- `m.note(n)`, `m.cc(n)`, `m.down(n)`, `m.lastNote`, `m.lastCC`, `m.pitchBend`, `m.count`, `m.last`,
-  `m.send`, `m.noteOn`, `m.noteOff`, `m.controlChange`, `m.programChange`, `m.sendPitchBend`, `m.sysex`.
+- `m.status`, `m.devices()`, `m.note(n)`, `m.cc(n)`, `m.down(n)`, `m.lastNote`, `m.lastCC`,
+  `m.lastDevice`, `m.pitchBend`, `m.count`, `m.last` (with `.device`), `m.send`, `m.noteOn`, `m.noteOff`,
+  `m.controlChange`, `m.programChange`, `m.sendPitchBend`, `m.sysex`.
 - `slide.value`, `slide.raw`, `slide.touched`, `slide.justTouched()`, `slide.pixel(note)`; `knob.value`,
   `knob.raw`, `knob.delta`, `knob.pressed`, `knob.justPressed()`, `knob.touched`, `knob.pixel(note)`.
 
@@ -450,12 +465,12 @@ No hardware needed. All three suites inject messages by hand and capture what th
 
 ```sh
 midi-helpers/test/java/build.sh      # wraps the tabs in a PApplet subclass, compiles against the installed
-                                     # Processing core jar, runs test/java/MidiHelpersTest.java (240 checks)
+                                     # Processing core jar, runs test/java/MidiHelpersTest.java (247 checks)
 midi-helpers/test/java/build.sh ide  # also builds a sketch with all tabs through Processing's own CLI preprocessor
 midi-helpers/test/python/run.sh      # runs test/python/run_tests.py under python3 and under Processing's own
-                                     # Jython 2.7 jar (210 checks each)
+                                     # Jython 2.7 jar (218 checks each)
 midi-helpers/test/p5/run.sh          # rebuilds p5/*.js from p5/src and loads each script, and the bundle, into a
-                                     # fake window with a fake navigator.requestMIDIAccess (node, 287 checks)
+                                     # fake window with a fake navigator.requestMIDIAccess (node, 299 checks)
 ```
 Also done: a sketch using every tab ran 20 frames through `Processing cli --run` with no devices attached
 (registerMethod, connect, dispose all fine), and the Jython interop paths (sending through the Receiver

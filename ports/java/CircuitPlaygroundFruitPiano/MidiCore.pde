@@ -29,6 +29,7 @@ import javax.sound.midi.MidiUnavailableException;
 public class MidiMsg {
   public int status, type, channel, data1, data2, millis;
   public byte[] sysex;
+  public String device = "";   // the input it came from
   MidiMsg(int status, int data1, int data2, int millis) {
     this.status = status;
     this.data1 = data1;
@@ -89,7 +90,11 @@ public class MidiCore {
   MidiDevice input, output;
   Transmitter transmitter;
   Receiver out;
+  ArrayList<MidiDevice> inputs = new ArrayList<MidiDevice>();       // every open input; one entry unless listening to all
+  ArrayList<Transmitter> transmitters = new ArrayList<Transmitter>();
+  public ArrayList<String> inputNames = new ArrayList<String>();
   public String inputName, outputName;
+  public String status = "not connected";
   public int received = 0, sent = 0;
   public boolean verbose = true;
   final ArrayList<MidiMsg> queue = new ArrayList<MidiMsg>();
@@ -115,16 +120,21 @@ public class MidiCore {
       try {
         MidiDevice dev = MidiSystem.getMidiDevice(info);
         if (dev instanceof Sequencer || dev instanceof Synthesizer) continue;
-        if (input == null && inputFilter != null && dev.getMaxTransmitters() != 0 && matches(info, inputFilter)) {
+        boolean all = inputFilter != null && inputFilter.isEmpty();   // no name: listen to every input
+        if ((input == null || all) && inputFilter != null && dev.getMaxTransmitters() != 0 && matches(info, inputFilter)) {
           dev.open();
-          transmitter = dev.getTransmitter();
-          transmitter.setReceiver(new Receiver() {
-            public void send(MidiMessage m, long t) { enqueue(m); }
+          final String name = info.getName();
+          Transmitter t = dev.getTransmitter();
+          t.setReceiver(new Receiver() {
+            public void send(MidiMessage m, long time) { enqueue(m, name); }
             public void close() {}
           });
-          input = dev;
-          inputName = info.getName();
-        } else if (output == null && outputFilter != null && dev.getMaxReceivers() != 0 && matches(info, outputFilter)) {
+          inputs.add(dev);
+          transmitters.add(t);
+          inputNames.add(name);
+          if (input == null) { input = dev; transmitter = t; inputName = name; }
+        }
+        if (output == null && outputFilter != null && dev.getMaxReceivers() != 0 && matches(info, outputFilter)) {
           dev.open();
           out = dev.getReceiver();
           output = dev;
@@ -134,9 +144,13 @@ public class MidiCore {
         println(label + ": could not open " + info.getName() + " (" + e.getMessage() + ")");
       }
     }
+    if (inputs.size() > 1) status = "listening to " + inputs.size() + " inputs: " + join(inputNames.toArray(new String[0]), ", ");
+    else if (connected()) status = "connected to " + (input != null ? inputName : outputName);
+    else status = "no MIDI device matching '" + inputFilter + "'";
     if (verbose) {
-      if (connected()) println(label + ": connected" + (input != null ? ", input '" + inputName + "'" : "") + (output != null ? ", output '" + outputName + "'" : ""));
-        else println(label + ": no MIDI device matching '" + inputFilter + "'; running without it");
+      if (inputs.size() > 1) println(label + ": " + status + (output != null ? "; output '" + outputName + "'" : ""));
+      else if (connected()) println(label + ": connected" + (input != null ? ", input '" + inputName + "'" : "") + (output != null ? ", output '" + outputName + "'" : ""));
+      else println(label + ": " + status + "; running without it");
     }
     return connected();
   }
@@ -171,7 +185,8 @@ public class MidiCore {
     return info.getName().toLowerCase().contains(f) || (info.getDescription() != null && info.getDescription().toLowerCase().contains(f));
   }
 
-  void enqueue(MidiMessage m) {
+  void enqueue(MidiMessage m) { enqueue(m, inputName == null ? "" : inputName); }
+  void enqueue(MidiMessage m, String device) {
     int now = app.millis();
     MidiMsg msg;
     if (m instanceof ShortMessage) {
@@ -183,6 +198,7 @@ public class MidiCore {
     } else {
       return; // MetaMessage
     }
+    msg.device = device;
     synchronized (queue) {
       queue.add(msg);
       received++;
@@ -190,8 +206,11 @@ public class MidiCore {
   }
 
   /** Fake an incoming message. Tests use it. */
-  public void inject(int status, int data1, int data2) {
-    synchronized (queue) { queue.add(new MidiMsg(status, data1, data2, app.millis())); }
+  public void inject(int status, int data1, int data2) { inject(status, data1, data2, inputName == null ? "" : inputName); }
+  public void inject(int status, int data1, int data2, String device) {
+    MidiMsg m = new MidiMsg(status, data1, data2, app.millis());
+    m.device = device;
+    synchronized (queue) { queue.add(m); }
   }
 
   /** Hand queued messages to the handler. Once per frame, from pre(). */
@@ -241,6 +260,30 @@ public class MidiCore {
   }
 
   // ---- sketch callbacks: call the sketch's method if it has one ----
+  /** Call name(args...). If the sketch's version takes one argument fewer, drop the last (the device name). */
+  public boolean callSketch(String name, Object[] args) {
+    for (int n = args.length; n >= 0; n--) {
+      Class[] types = new Class[n];
+      Object[] a = new Object[n];
+      for (int i = 0; i < n; i++) {
+        a[i] = args[i];
+        types[i] = args[i] instanceof Integer ? int.class : args[i] instanceof Float ? float.class : args[i] instanceof Boolean ? boolean.class : args[i].getClass();
+      }
+      try {
+        java.lang.reflect.Method m = app.getClass().getMethod(name, types);
+        m.invoke(app, a);
+        return true;
+      } catch (NoSuchMethodException e) {
+        if (n == 0 || !(args[n - 1] instanceof String)) return false;   // only the trailing device name is optional
+      } catch (Exception e) {
+        println(label + ": " + name + "() threw " + e.getCause());
+        return false;
+      }
+    }
+    return false;
+  }
+  public boolean callSketch(String name, int a, int b, int c, String device) { return callSketch(name, new Object[] { a, b, c, device }); }
+  public boolean callSketch(String name, int a, int b, String device) { return callSketch(name, new Object[] { a, b, device }); }
   public boolean callSketch(String name, int a, int b, int c) {
     try {
       java.lang.reflect.Method m = app.getClass().getMethod(name, int.class, int.class, int.class);
@@ -314,22 +357,23 @@ public class MidiCore {
     }
   }
 
-  /** noteOn / noteOff / controlChange(channel, number, value), if the sketch defines them. */
+  /** noteOn / noteOff / controlChange(channel, number, value[, device]), if the sketch defines them. */
   public void dispatchGeneric(MidiMsg m) {
-    if (m.isNoteOn()) callSketch("noteOn", m.channel, m.data1, m.data2);
-    else if (m.isNoteOff()) callSketch("noteOff", m.channel, m.data1, m.data2);
-    else if (m.isControlChange()) callSketch("controlChange", m.channel, m.data1, m.data2);
+    if (m.isNoteOn()) callSketch("noteOn", m.channel, m.data1, m.data2, m.device);
+    else if (m.isNoteOff()) callSketch("noteOff", m.channel, m.data1, m.data2, m.device);
+    else if (m.isControlChange()) callSketch("controlChange", m.channel, m.data1, m.data2, m.device);
   }
 
   public void close() {
     try {
-      if (transmitter != null) transmitter.close();
-      if (input != null) input.close();
+      for (Transmitter t : transmitters) t.close();
+      for (MidiDevice d : inputs) d.close();
       if (out != null) out.close();
       if (output != null) output.close();
     } catch (Exception e) {
     }
     transmitter = null; input = null; out = null; output = null;
+    inputs.clear(); transmitters.clear(); inputNames.clear();
     inputName = null; outputName = null;
   }
 }

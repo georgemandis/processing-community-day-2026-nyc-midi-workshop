@@ -6,22 +6,24 @@ directly, so you see the three bytes: `javax.sound.midi` in Java mode and Python
 
 | | Java | Python | p5 |
 |---|---|---|---|
-| HelloMidi: list devices, open every input, print `[status, data1, data2]`, draw a circle from them | `java/HelloMidi` | `python/hello_midi` | `p5/hello-midi` |
+| HelloMidi: open every input, a connection line, a device picker, the last 12 messages with the raw bytes, a circle from data1 and data2 | `java/HelloMidi` | `python/hello_midi` | `p5/hello-midi` |
 | PipSqueak: three CCs decoded inline | `java/RawPipSqueak` | `python/raw_pipsqueak` | `p5/pipsqueak` |
 | Circuit Playground: channel 2 notes and CC 1 | `java/RawCircuitPlayground` | `python/raw_circuitplayground` | `p5/circuit-playground` |
 | Midi Fighter: notes 36–51 in, the same notes out for LEDs | `java/RawMidiFighter` | `python/raw_midifighter` | `p5/midi-fighter` |
 | Launchpad: one SysEx for programmer mode, pads as notes, palette colours out | `java/RawLaunchpad` | `python/raw_launchpad` | `p5/launchpad` |
 
-HelloMidi is under 50 lines, the device sketches under 60, commented line by line. Each runs with nothing
-plugged in and prints the devices it found. Open them like the other starters: Processing for `.pde` and
+All under about 60 lines, commented line by line. Each runs with nothing plugged in and says on screen which
+inputs it is listening to. HelloMidi listens to every input; the picker above the log (a dropdown in p5, a
+clickable list in Java and Python) narrows it to one, with All inputs first and default. In p5 the first click
+or key press anywhere connects, and the dropdown follows devices as they come and go (`onstatechange`). Open them like the other starters: Processing for `.pde` and
 `.pyde`, a browser over http for p5 (`python3 -m http.server 8765` at the repo root, then
 `starters/raw/p5/hello-midi/`). The p5 pages load nothing but p5, so they also work by double-clicking
 `index.html` or pasted into the p5 web editor.
 
 ## Raw or helpers
 
-Start raw to see what is happening. HelloMidi shows a status byte (what kind of message, which channel), then
-two data bytes. Plug anything in and watch the numbers. A sketch that needs two or three
+Start raw to see what is happening. HelloMidi logs each message as a status byte (what kind of message, which
+channel) and two data bytes. Plug anything in and watch the numbers. A sketch that needs two or three
 messages can decode them inline in a dozen lines.
 
 Switch to `../../midi-helpers/` when the plumbing crowds out the idea. They do what these sketches do by hand

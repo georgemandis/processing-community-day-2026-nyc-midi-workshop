@@ -17,8 +17,9 @@
   if (window.MidiCore) return;
 
   class MidiMsg {
-    constructor(status, data1, data2, millis, sysex) {
+    constructor(status, data1, data2, millis, sysex, device) {
       this.status = status; this.data1 = data1; this.data2 = data2; this.millis = millis; this.sysex = sysex || null;
+      this.device = device || "";   // the input it came from
       if (status >= 0xf0) { this.type = status; this.channel = 0; }
       else { this.type = status & 0xf0; this.channel = (status & 0x0f) + 1; }
     }
@@ -45,6 +46,7 @@
       this.verbose = opts.verbose !== false;
       this.callbacks = opts.callbacks || null;   // sketch callbacks; default: window globals
       this.input = null; this.output = null; this.inputName = null; this.outputName = null;
+      this.inputs = []; this.inputNames = [];   // every open input; one unless listening to all
       this.access = null; this.sysexEnabled = false;
       this.status = "not connected";
       this.received = 0; this.sent = 0;
@@ -93,14 +95,24 @@
       this.sysexEnabled = !!this.access.sysexEnabled;
       if (this.verbose) MidiCore.printDevices();
       if (this.inputFilter != null) {
-        const input = [...this.access.inputs.values()].find((p) => MidiCore.matches(p, this.inputFilter));
-        if (input) { this.input = input; this.inputName = input.name; input.onmidimessage = (ev) => this.enqueue(ev.data, ev.timeStamp); }
+        const all = this.inputFilter === "";   // no name: listen to every input
+        for (const port of this.access.inputs.values()) {
+          if (!MidiCore.matches(port, this.inputFilter)) continue;
+          const name = port.name;
+          port.onmidimessage = (ev) => this.enqueue(ev.data, ev.timeStamp, name);
+          this.inputs.push(port); this.inputNames.push(name);
+          if (!this.input) { this.input = port; this.inputName = name; }
+          if (!all) break;
+        }
       }
       if (this.outputFilter != null) {
         const output = [...this.access.outputs.values()].find((p) => MidiCore.matches(p, this.outputFilter));
         if (output) { this.output = output; this.outputName = output.name; }
       }
-      if (this.connected()) {
+      if (this.inputs.length > 1) {
+        this.status = "listening to " + this.inputs.length + " inputs: " + this.inputNames.join(", ");
+        if (this.verbose) console.log(this.label + ": " + this.status + (this.output ? "; output '" + this.outputName + "'" : ""));
+      } else if (this.connected()) {
         this.status = "connected to " + (this.inputName || this.outputName);
         if (this.verbose) console.log(this.label + ": connected" + (this.input ? ", input '" + this.inputName + "'" : "") + (this.output ? ", output '" + this.outputName + "'" : ""));
       } else {
@@ -123,18 +135,19 @@
       return true;
     }
 
-    enqueue(data, timeStamp) {
+    enqueue(data, timeStamp, device) {
       const now = this.millis();
+      if (device == null) device = this.inputName || "";
       let msg;
-      if (data[0] === 0xf0) msg = new MidiMsg(0xf0, 0, 0, now, Array.from(data));
+      if (data[0] === 0xf0) msg = new MidiMsg(0xf0, 0, 0, now, Array.from(data), device);
       else if (data[0] >= 0xf8) return; // clock, active sensing
-      else msg = new MidiMsg(data[0], data[1] || 0, data[2] || 0, now);
+      else msg = new MidiMsg(data[0], data[1] || 0, data[2] || 0, now, null, device);
       this.queue.push(msg);
       this.received++;
     }
     /** Fake an incoming message. Tests use it. */
-    inject(status, data1, data2, millis) {
-      this.queue.push(new MidiMsg(status, data1 || 0, data2 || 0, millis == null ? this.millis() : millis));
+    inject(status, data1, data2, millis, device) {
+      this.queue.push(new MidiMsg(status, data1 || 0, data2 || 0, millis == null ? this.millis() : millis, null, device == null ? this.inputName || "" : device));
     }
     /** Hand queued messages to handler.midi(msg). */
     poll(handler) {
@@ -171,14 +184,15 @@
       fn(...args);
       return true;
     }
-    dispatchGeneric(m) {
-      if (m.isNoteOn()) this.callSketch("noteOn", m.channel, m.data1, m.data2);
-      else if (m.isNoteOff()) this.callSketch("noteOff", m.channel, m.data1, m.data2);
-      else if (m.isControlChange()) this.callSketch("controlChange", m.channel, m.data1, m.data2);
+    dispatchGeneric(m) {   // the device name rides along as a trailing argument; sketches that do not declare it never see it
+      if (m.isNoteOn()) this.callSketch("noteOn", m.channel, m.data1, m.data2, m.device);
+      else if (m.isNoteOff()) this.callSketch("noteOff", m.channel, m.data1, m.data2, m.device);
+      else if (m.isControlChange()) this.callSketch("controlChange", m.channel, m.data1, m.data2, m.device);
     }
 
     close() {
-      if (this.input) this.input.onmidimessage = null;
+      for (const p of this.inputs) p.onmidimessage = null;
+      this.inputs = []; this.inputNames = [];
       this.input = this.output = null; this.inputName = this.outputName = null;
     }
   }
@@ -797,15 +811,18 @@
 
 // anymidi.js - any MIDI device: last note and CC values, plus a sender. Defines window.AnyMidi.
 //
-//   const m = new AnyMidi("name substring");               // or new AnyMidi() for the first input
-//   function setup() { createCanvas(400, 400); m.connectOnClick(); }
+//   const m = new AnyMidi();                               // every input, first output
+//   const m = new AnyMidi("name substring");               // one input and one output
+//   function setup() { createCanvas(400, 400); m.connectOnClick(); }   // m.status: "listening to 4 inputs: ..." or "connected to ..."
+//   m.devices()                        // the input names
 //   m.note(n); m.cc(n)                 // last value seen, 0..127, -1 if never. A note's value is its velocity, 0 after Note Off
 //   m.down(n)                          // note held?
-//   m.lastNote, m.lastVelocity, m.lastCC, m.lastCCValue, m.lastChannel, m.pitchBend, m.pressure, m.count, m.last (a MidiMsg)
+//   m.lastNote, m.lastVelocity, m.lastCC, m.lastCCValue, m.lastChannel, m.lastDevice, m.pitchBend, m.pressure, m.count, m.last (a MidiMsg, .device says which input)
 //   m.send(status, d1, d2); m.noteOn(ch, n, vel); m.noteOff(ch, n); m.controlChange(ch, cc, val); m.programChange(ch, p); m.sendPitchBend(ch, v); m.sysex(bytes)
 //
 // Sketch callbacks: noteOn(channel, note, velocity), noteOff(channel, note, velocity), controlChange(channel, number, value),
-// pitchBend(channel, value), midiMessage(status, data1, data2) for everything else.
+// pitchBend(channel, value), midiMessage(status, data1, data2) for everything else. Each gets the device name as a trailing
+// argument: noteOn(channel, note, velocity, device). Declare it or not.
 (function () {
   class AnyMidi extends MidiHelper {
     constructor(opts) {
@@ -814,22 +831,23 @@
       super(new MidiCore({ name: opts.name || "", sysex: !!opts.sysex, label: "AnyMidi", callbacks: opts.callbacks }));
       this._notes = new Array(128).fill(-1); this._ccs = new Array(128).fill(-1);
       this.lastNote = -1; this.lastVelocity = -1; this.lastCC = -1; this.lastCCValue = -1; this.lastChannel = -1;
-      this.pitchBend = 0; this.pressure = 0; this.count = 0; this.last = null;
+      this.pitchBend = 0; this.pressure = 0; this.count = 0; this.last = null; this.lastDevice = "";
     }
+    devices() { return this.core.inputNames.slice(); }
     note(n) { return n >= 0 && n < 128 ? this._notes[n] : -1; }
     cc(n) { return n >= 0 && n < 128 ? this._ccs[n] : -1; }
     down(n) { return this.note(n) > 0; }
 
     midi(m) {
-      this.count++; this.last = m;
+      this.count++; this.last = m; this.lastDevice = m.device;
       if (m.channel > 0) this.lastChannel = m.channel;
       if (m.isNoteOn()) { this._notes[m.data1] = m.data2; this.lastNote = m.data1; this.lastVelocity = m.data2; }
       else if (m.isNoteOff()) { this._notes[m.data1] = 0; this.lastNote = m.data1; this.lastVelocity = 0; }
       else if (m.isControlChange()) { this._ccs[m.data1] = m.data2; this.lastCC = m.data1; this.lastCCValue = m.data2; }
-      else if (m.isPitchBend()) { this.pitchBend = m.pitchBend(); this.core.callSketch("pitchBend", m.channel, this.pitchBend); }
+      else if (m.isPitchBend()) { this.pitchBend = m.pitchBend(); this.core.callSketch("pitchBend", m.channel, this.pitchBend, m.device); }
       else if (m.type === 0xd0) this.pressure = m.data1;
       this.core.dispatchGeneric(m);
-      if (!m.sysex && !m.isNoteOn() && !m.isNoteOff() && !m.isControlChange()) this.core.callSketch("midiMessage", m.status, m.data1, m.data2);
+      if (!m.sysex && !m.isNoteOn() && !m.isNoteOff() && !m.isControlChange()) this.core.callSketch("midiMessage", m.status, m.data1, m.data2, m.device);
     }
     update() { this.core.poll(this); return this; }
 

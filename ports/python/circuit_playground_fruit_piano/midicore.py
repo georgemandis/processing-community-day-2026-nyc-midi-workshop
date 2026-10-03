@@ -24,6 +24,7 @@ Sketch callbacks (note_on, pad_pressed, ...) are looked up in the sketch module 
 callbacks=globals() to a helper if that lookup ever fails.
 """
 from __future__ import division, print_function
+import inspect
 import sys
 import threading
 import time
@@ -95,10 +96,11 @@ def print_midi_devices():
 
 class MidiMsg(object):
     """One decoded message. channel is 1..16, 0 for system messages. SysEx: the bytes are in sysex."""
-    __slots__ = ("status", "type", "channel", "data1", "data2", "millis", "sysex")
+    __slots__ = ("status", "type", "channel", "data1", "data2", "millis", "sysex", "device")
 
-    def __init__(self, status, data1=0, data2=0, millis=0, sysex=None):
+    def __init__(self, status, data1=0, data2=0, millis=0, sysex=None, device=""):
         self.status, self.data1, self.data2, self.millis, self.sysex = status, data1, data2, millis, sysex
+        self.device = device  # the input it came from
         if status >= 0xF0:
             self.type, self.channel = status, 0
         else:
@@ -130,11 +132,12 @@ class MidiMsg(object):
 class _QueueReceiver(Receiver):
     """Java calls send() on its MIDI thread. Only queue there."""
 
-    def __init__(self, core):
+    def __init__(self, core, device=""):
         self.core = core
+        self.device = device
 
     def send(self, message, timestamp):
-        self.core._enqueue(message)
+        self.core._enqueue(message, self.device)
 
     def close(self):
         pass
@@ -149,6 +152,8 @@ class MidiCore(object):
         self.verbose = True
         self.input = self.output = self.transmitter = self.out = None
         self.input_name = self.output_name = None
+        self.inputs, self.transmitters, self.input_names = [], [], []   # every open input; one unless listening to all
+        self.status = "not connected"
         self.received = self.sent = 0
         self._queue = []
         self._lock = threading.Lock()
@@ -191,14 +196,20 @@ class MidiCore(object):
         if self.verbose:
             print_midi_devices()
         if self.input_filter is not None:
+            every = self.input_filter == ""   # no name: listen to every input
             for info, dev in _devices(True):
                 if self._matches(info, self.input_filter):
                     try:
                         _call(MidiDevice, dev, "open")
-                        self.transmitter = _call(MidiDevice, dev, "getTransmitter")
-                        _call(Transmitter, self.transmitter, "setReceiver", _QueueReceiver(self))
-                        self.input, self.input_name = dev, info.getName()
-                        break
+                        t = _call(MidiDevice, dev, "getTransmitter")
+                        _call(Transmitter, t, "setReceiver", _QueueReceiver(self, info.getName()))
+                        self.inputs.append(dev)
+                        self.transmitters.append(t)
+                        self.input_names.append(info.getName())
+                        if self.input is None:
+                            self.input, self.transmitter, self.input_name = dev, t, info.getName()
+                        if not every:
+                            break
                     except Exception as e:
                         print(self.label + ": could not open " + info.getName() + " (" + str(e) + ")")
         if self.output_filter is not None:
@@ -211,12 +222,20 @@ class MidiCore(object):
                         break
                     except Exception as e:
                         print(self.label + ": could not open " + info.getName() + " (" + str(e) + ")")
+        if len(self.inputs) > 1:
+            self.status = "listening to %d inputs: %s" % (len(self.inputs), ", ".join(self.input_names))
+        elif self.connected():
+            self.status = "connected to " + (self.input_name or self.output_name)
+        else:
+            self.status = "no MIDI device matching '%s'" % self.input_filter
         if self.verbose:
-            if self.connected():
+            if len(self.inputs) > 1:
+                print(self.label + ": " + self.status + ("; output '%s'" % self.output_name if self.output else ""))
+            elif self.connected():
                 print(self.label + ": connected" + (", input '%s'" % self.input_name if self.input else "")
                       + (", output '%s'" % self.output_name if self.output else ""))
             else:
-                print(self.label + ": no MIDI device matching '%s'; running without it" % self.input_filter)
+                print(self.label + ": " + self.status + "; running without it")
         return self.connected()
 
     def connect_output(self, filter_name=None):
@@ -243,10 +262,10 @@ class MidiCore(object):
 
     def close(self):
         try:
-            if self.transmitter is not None:
-                _call(Transmitter, self.transmitter, "close")
-            if self.input is not None:
-                _call(MidiDevice, self.input, "close")
+            for t in self.transmitters:
+                _call(Transmitter, t, "close")
+            for d in self.inputs:
+                _call(MidiDevice, d, "close")
             if self.out is not None:
                 _call(Receiver, self.out, "close")
             if self.output is not None:
@@ -255,24 +274,27 @@ class MidiCore(object):
             pass
         self.input = self.output = self.transmitter = self.out = None
         self.input_name = self.output_name = None
+        self.inputs, self.transmitters, self.input_names = [], [], []
 
     # ---- receiving ----
-    def _enqueue(self, message):
+    def _enqueue(self, message, device=""):
         now = self.millis()
         if ShortMessage is not None and isinstance(message, ShortMessage):
-            msg = MidiMsg(message.getStatus(), message.getData1(), message.getData2(), now)
+            msg = MidiMsg(message.getStatus(), message.getData1(), message.getData2(), now, None, device)
         elif SysexMessage is not None and isinstance(message, SysexMessage):
-            msg = MidiMsg(0xF0, 0, 0, now, [b & 0xFF for b in message.getMessage()])
+            msg = MidiMsg(0xF0, 0, 0, now, [b & 0xFF for b in message.getMessage()], device)
         else:
             return
         with self._lock:
             self._queue.append(msg)
             self.received += 1
 
-    def inject(self, status, data1=0, data2=0, millis=None):
+    def inject(self, status, data1=0, data2=0, millis=None, device=None):
         """Fake an incoming message. Tests use it."""
+        if device is None:
+            device = self.input_name or ""
         with self._lock:
-            self._queue.append(MidiMsg(status, data1, data2, self.millis() if millis is None else millis))
+            self._queue.append(MidiMsg(status, data1, data2, self.millis() if millis is None else millis, None, device))
 
     def poll(self, handler):
         """Hand queued messages to handler.midi(msg). Returns how many."""
@@ -342,14 +364,28 @@ class MidiCore(object):
             return False
         return True
 
+    def call_sketch_from(self, name, device, *args):
+        """Call name(*args, device), or name(*args) if the sketch's version has no room for the device."""
+        fn = self._lookup(name)
+        if fn is None or not callable(fn):
+            return False
+        try:
+            spec = inspect.getfullargspec(fn) if hasattr(inspect, "getfullargspec") else inspect.getargspec(fn)
+            wants = len(args) + 1 if spec.varargs or len(spec.args) > len(args) else len(args)
+        except Exception:
+            wants = len(args) + 1
+        if wants > len(args):
+            return self.call_sketch(name, *(args + (device,)))
+        return self.call_sketch(name, *args)
+
     def dispatch_generic(self, m):
-        """note_on / note_off / control_change(channel, number, value), if the sketch defines them."""
+        """note_on / note_off / control_change(channel, number, value[, device]), if the sketch defines them."""
         if m.is_note_on():
-            self.call_sketch("note_on", m.channel, m.data1, m.data2)
+            self.call_sketch_from("note_on", m.device, m.channel, m.data1, m.data2)
         elif m.is_note_off():
-            self.call_sketch("note_off", m.channel, m.data1, m.data2)
+            self.call_sketch_from("note_off", m.device, m.channel, m.data1, m.data2)
         elif m.is_control_change():
-            self.call_sketch("control_change", m.channel, m.data1, m.data2)
+            self.call_sketch_from("control_change", m.device, m.channel, m.data1, m.data2)
 
 
 class FrameSynced(object):

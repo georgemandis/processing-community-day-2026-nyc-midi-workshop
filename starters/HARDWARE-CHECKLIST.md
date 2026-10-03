@@ -38,10 +38,14 @@ spot-check one of each.
 - [ ] Stop: Launchpad back in Live mode.
 - [ ] Two Launchpads: the helper takes the first "LPMiniMK3 MIDI". Does the second need another substring?
 
-## AnyMidi
-- [ ] Trinkey slider or knob: a bar at the right CC number moves.
-- [ ] Cap-touch Trinkey or NeoTrellis: notes pop circles. Note the numbers.
-- [ ] Two devices, no name: console says which it chose. `new AnyMidi(this, "substring")` picks the other.
+## AnyMidi (the raw log)
+- [ ] Several devices plugged in: the connection line lists all of them; wiggling each one adds lines with its
+      name in the device column. The PipSqueak case that started this: CC 17 / 20 / 25 lines appear.
+- [ ] Note off and pitch bend show as their own lines; bend shows the signed value and two data bytes.
+- [ ] Pick one device: the log and the circles / bars only react to that one. All: everything.
+- [ ] p5: unplug and replug a device; the dropdown follows within a second (statechange reconnect).
+- [ ] Java / Python: the clickable list across the top matches the connection line.
+- [ ] Trinkey slider or knob: a bar at the right CC number moves. Cap-touch Trinkey or NeoTrellis: notes pop circles.
 
 ## p5 starters (Chrome)
 - [ ] Serve the repo (`python3 -m http.server 8765`), open each `starters/p5/<device>/` with nothing plugged
@@ -58,8 +62,10 @@ spot-check one of each.
       `ports/HARDWARE-CHECKLIST.md`. The sequencer's drums need one click first.
 
 ## raw starters (no helper library)
-- [ ] `java/HelloMidi` with anything plugged in: lists every port, prints `[status, data1, data2]` per message,
-      circle changes. Same for `python/hello_midi` and `p5/hello-midi` (click first).
+- [ ] `java/HelloMidi` with several devices plugged in: the connection line names them all, each one's messages
+      log with its name, the circle changes. Click a name in the list: only that device logs. Same for
+      `python/hello_midi` and `p5/hello-midi` (p5: click or press a key once; unplug and replug a device and the
+      dropdown follows).
 - [ ] `RawPipSqueak`: dot follows the stick, up is up, button changes colour. Drift at rest means the
       hard-coded centre (60 / 68) is off for that unit.
 - [ ] `RawCircuitPlayground`: mode 1 lights the matching pad, mode 2 brightens the sky, mode 6 tilts the ball

@@ -6,17 +6,21 @@ anymidi.py - any MIDI device: last note and CC values, plus a sender. Needs midi
 
     def setup():
         global m
-        m = AnyMidi(this, "name substring")     # or AnyMidi(this) for the first input
-        m.connect()
+        m = AnyMidi(this)                       # every input, first output
+        m = AnyMidi(this, "name substring")     # one input and one output
+        m.connect()                             # m.status: "listening to 4 inputs: ..." or "connected to ..."
+        m.devices()                             # the input names
 
     def draw():
         m.note(n); m.cc(n)              # last value seen, 0..127, -1 if never. A note's value is its velocity, 0 after Note Off
         m.down(n)                       # note held?
-        m.last_note; m.last_velocity; m.last_cc; m.last_cc_value; m.last_channel; m.pitch_bend; m.count; m.last
+        m.last_note; m.last_velocity; m.last_cc; m.last_cc_value; m.last_channel; m.last_device; m.pitch_bend; m.count; m.last
         m.send(status, d1, d2); m.note_on(ch, n, vel); m.note_off(ch, n); m.control_change(ch, cc, val); m.sysex(bytes)
 
 Sketch callbacks: note_on(channel, note, velocity), note_off(channel, note, velocity),
 control_change(channel, number, value), pitch_bend(channel, value), midi_message(status, data1, data2).
+Each also takes a trailing device argument if you declare one: note_on(channel, note, velocity, device).
+m.last.device says which input a message came from.
 """
 from __future__ import division, print_function
 
@@ -32,12 +36,18 @@ class AnyMidi(FrameSynced):
         self._last_note = self._last_velocity = self._last_cc = self._last_cc_value = self._last_channel = -1
         self._pitch_bend = self._pressure = self._count = 0
         self._last = None
+        self._last_device = ""
 
     def connect(self):
         return self.core.connect()
 
     def connected(self):
         return self.core.has_input()
+
+    status = property(lambda self: self.core.status)
+
+    def devices(self):
+        return list(self.core.input_names)
 
     def note(self, n):
         self._sync()
@@ -59,10 +69,12 @@ class AnyMidi(FrameSynced):
     pressure = property(lambda self: (self._sync(), self._pressure)[1])
     count = property(lambda self: (self._sync(), self._count)[1])
     last = property(lambda self: (self._sync(), self._last)[1])
+    last_device = property(lambda self: (self._sync(), self._last_device)[1])
 
     def midi(self, m):
         self._count += 1
         self._last = m
+        self._last_device = m.device
         if m.channel > 0:
             self._last_channel = m.channel
         if m.is_note_on():
@@ -76,12 +88,12 @@ class AnyMidi(FrameSynced):
             self._last_cc, self._last_cc_value = m.data1, m.data2
         elif m.is_pitch_bend():
             self._pitch_bend = m.pitch_bend()
-            self.core.call_sketch("pitch_bend", m.channel, self._pitch_bend)
+            self.core.call_sketch_from("pitch_bend", m.device, m.channel, self._pitch_bend)
         elif m.type == 0xD0:
             self._pressure = m.data1
         self.core.dispatch_generic(m)
         if m.sysex is None and not (m.is_note_on() or m.is_note_off() or m.is_control_change()):
-            self.core.call_sketch("midi_message", m.status, m.data1, m.data2)
+            self.core.call_sketch_from("midi_message", m.device, m.status, m.data1, m.data2)
 
     def update(self):
         self.core.poll(self)
