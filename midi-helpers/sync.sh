@@ -9,6 +9,8 @@
 #     launchpad.py      # or spell the file out
 #
 # MidiCore / midicore.py is always included, so a marker can say "PipSqueak" and nothing else.
+# A Python Mode sketch folder (has a .pyde) also gets a sketch.properties (mode=Python,
+# mode.id=jycessing.mode.PythonMode) if it has none, so the IDE opens it in Python Mode.
 #
 #   midi-helpers/sync.sh               # sync every marked sketch under the repo
 #   midi-helpers/sync.sh --check       # report only; exit 1 if any copy is missing or stale
@@ -30,6 +32,10 @@ copied=0
 while IFS= read -r marker; do
   dir="$(dirname "$marker")"
   if ls "$dir"/*.pyde >/dev/null 2>&1; then kind=py; else kind=pde; fi
+  if [ "$kind" = py ] && [ ! -f "$dir/sketch.properties" ]; then
+    if [ "$CHECK" = 1 ]; then echo "missing ${dir#$ROOT/}/sketch.properties"; stale=1
+    else printf 'mode=Python\nmode.id=jycessing.mode.PythonMode\n' > "$dir/sketch.properties"; echo "wrote  ${dir#$ROOT/}/sketch.properties"; copied=$((copied + 1)); fi
+  fi
   names="MidiCore"
   while IFS= read -r line || [ -n "$line" ]; do
     line="${line%%#*}"; line="$(echo "$line" | tr -d '[:space:]')"

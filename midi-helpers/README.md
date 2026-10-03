@@ -52,6 +52,20 @@ def draw():
     circle(300 + stick.x * 250, 300 - stick.y * 250, 60 if stick.pressed else 30)
 ```
 
+Python Mode and Java 17. Python Mode runs Jython with `respectJavaAccessibility` off, which makes
+Jython reach for private JDK members. Java 17 refuses that for `javax.sound.midi`, so `midicore.py`
+sets `org.python.core.Options.respectJavaAccessibility = True` before it imports anything from
+`javax.sound.midi`. Verified in George's IDE. The modules only use public API, so nothing else changes.
+A Python sketch folder also needs a `sketch.properties` so the IDE opens it in the right mode:
+
+```
+mode=Python
+mode.id=jycessing.mode.PythonMode
+```
+
+Every Python sketch in the repo has one. `sync.sh` writes it into any Python Mode sketch folder it syncs
+into that lacks it.
+
 Processing cannot import a sibling folder, so sketches hold copies and this folder is the source. A sketch
 opts in with a `.midi-helpers` file listing the helpers it wants, one per line (`MidiCore` is implied).
 `midi-helpers/sync.sh` copies the current versions in. `sync.sh --check` only reports.

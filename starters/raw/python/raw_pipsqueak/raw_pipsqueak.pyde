@@ -3,6 +3,10 @@
 # near the middle (a real unit rests off-centre: x about 60, y about 68).
 # A dot follows the stick; the button changes its colour. No stick: arrows move, space is the button.
 from __future__ import division, print_function
+# Python Mode runs Jython with respectJavaAccessibility off; Java 17 then refuses the
+# private-member reflection on javax.sound.midi. Turn it back on before the import.
+from org.python.core import Options as _JyOptions
+_JyOptions.respectJavaAccessibility = True
 from javax.sound.midi import MidiSystem, MidiDevice, Transmitter, Receiver, Sequencer, Synthesizer, ShortMessage
 from java.lang import Long
 

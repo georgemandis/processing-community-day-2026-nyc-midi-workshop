@@ -29,6 +29,10 @@ import threading
 import time
 
 try:
+    # Python Mode runs Jython with respectJavaAccessibility off; Java 17 then refuses the
+    # private-member reflection on javax.sound.midi. Turn it back on before the import.
+    from org.python.core import Options as _JyOptions
+    _JyOptions.respectJavaAccessibility = True
     from javax.sound.midi import MidiSystem, MidiDevice, Transmitter, Receiver, ShortMessage
     from java.lang import Object as _JObject
 except ImportError:  # not running under Jython (e.g. a syntax check with CPython)

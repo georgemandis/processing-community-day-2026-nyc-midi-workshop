@@ -4,6 +4,10 @@
 # Then: pad at column x, row y (0,0 top-left) is note (8 - y) * 10 + (x + 1); note on velocity > 0 = press, 0 = release.
 # Top row of round buttons = CC 91..98. To light a pad: note on, channel 1, velocity = a palette colour 0..127. No pad: click cells, c clears.
 from __future__ import division, print_function
+# Python Mode runs Jython with respectJavaAccessibility off; Java 17 then refuses the
+# private-member reflection on javax.sound.midi. Turn it back on before the import.
+from org.python.core import Options as _JyOptions
+_JyOptions.respectJavaAccessibility = True
 from javax.sound.midi import MidiSystem, MidiDevice, Transmitter, Receiver, Sequencer, Synthesizer, ShortMessage, SysexMessage
 from java.lang import Long
 import jarray

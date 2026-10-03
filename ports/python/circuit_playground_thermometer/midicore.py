@@ -29,6 +29,14 @@ import threading
 import time
 
 try:
+    # Processing's Python Mode runs Jython with respectJavaAccessibility=false, which makes Jython
+    # call setAccessible on private JDK members. Java 17 refuses that for javax.sound.midi, so turn
+    # it back on before the first MIDI class is wrapped. Public API only, which is all we use.
+    try:
+        from org.python.core import Options as _JyOptions
+        _JyOptions.respectJavaAccessibility = True
+    except ImportError:
+        pass
     from javax.sound.midi import (MidiSystem, MidiDevice, Transmitter, Receiver, ShortMessage, SysexMessage,
                                   Sequencer, Synthesizer, MidiMessage)
     import jarray

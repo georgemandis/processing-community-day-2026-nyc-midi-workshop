@@ -5,6 +5,10 @@
 #   sound / temperature: CC 1 once a second.   mode 6 accelerometer: three note ons in a burst, x y z, note = m/s^2 + 20.
 # Draws a ring of pads, a sensor-lit sky and a tilt ball. No board: keys 1-8 are the pads, the mouse tilts.
 from __future__ import division, print_function
+# Python Mode runs Jython with respectJavaAccessibility off; Java 17 then refuses the
+# private-member reflection on javax.sound.midi. Turn it back on before the import.
+from org.python.core import Options as _JyOptions
+_JyOptions.respectJavaAccessibility = True
 from javax.sound.midi import MidiSystem, MidiDevice, Transmitter, Receiver, Sequencer, Synthesizer, ShortMessage
 from java.lang import Long
 

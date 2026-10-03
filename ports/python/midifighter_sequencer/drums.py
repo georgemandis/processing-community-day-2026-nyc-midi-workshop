@@ -15,6 +15,10 @@ midicore.py does for MIDI ports.
 from __future__ import division, print_function
 
 try:
+    # Python Mode runs Jython with respectJavaAccessibility off; Java 17 then refuses the
+    # private-member reflection on javax.sound.midi. Turn it back on before the import.
+    from org.python.core import Options as _JyOptions
+    _JyOptions.respectJavaAccessibility = True
     from javax.sound.midi import MidiSystem, MidiDevice, Synthesizer, Receiver, ShortMessage
     from java.lang import Long
 except ImportError:  # not running under Jython

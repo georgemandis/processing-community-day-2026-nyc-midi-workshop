@@ -7,6 +7,10 @@
 # A MIDI message is three bytes. status = what kind + which channel (0x90 = note on, channel 1;
 # 0xB2 = control change, channel 3). data1 = which note or which knob. data2 = how hard, or the knob's value.
 from __future__ import division, print_function
+# Python Mode runs Jython with respectJavaAccessibility off; Java 17 then refuses the
+# private-member reflection on javax.sound.midi. Turn it back on before the import.
+from org.python.core import Options as _JyOptions
+_JyOptions.respectJavaAccessibility = True
 from javax.sound.midi import MidiSystem, MidiDevice, Transmitter, Receiver, Sequencer
 
 S = {"status": -1, "data1": 0, "data2": 0, "count": 0}   # the last three bytes seen (written by the MIDI thread)

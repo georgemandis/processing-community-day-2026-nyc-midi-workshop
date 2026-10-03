@@ -4,6 +4,10 @@
 # send the SAME note back: note on with velocity 127 lights it, velocity 0 turns it off.
 # Press a button: its cell toggles on screen and its LED toggles. No device: keys 1234/qwer/asdf/zxcv.
 from __future__ import division, print_function
+# Python Mode runs Jython with respectJavaAccessibility off; Java 17 then refuses the
+# private-member reflection on javax.sound.midi. Turn it back on before the import.
+from org.python.core import Options as _JyOptions
+_JyOptions.respectJavaAccessibility = True
 from javax.sound.midi import MidiSystem, MidiDevice, Transmitter, Receiver, Sequencer, Synthesizer, ShortMessage
 from java.lang import Long
 

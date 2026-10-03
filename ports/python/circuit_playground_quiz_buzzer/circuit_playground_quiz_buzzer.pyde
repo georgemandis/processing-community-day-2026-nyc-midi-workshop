@@ -6,6 +6,10 @@
 # contains "circuit playground" itself (through interface reflection, as midicore.py does) and numbers them as
 # teams. No boards: keys 1-4 buzz.
 from __future__ import division, print_function
+# Python Mode runs Jython with respectJavaAccessibility off; Java 17 then refuses the
+# private-member reflection on javax.sound.midi. Turn it back on before the import.
+from org.python.core import Options as _JyOptions
+_JyOptions.respectJavaAccessibility = True
 from javax.sound.midi import MidiSystem, MidiDevice, Transmitter, Receiver, Sequencer
 
 boards = []
