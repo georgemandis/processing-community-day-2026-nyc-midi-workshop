@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Launchpad Automata</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; padding: 1.25rem; background: #14161a; color: #e8e8e8; font-family: system-ui, sans-serif; }
+    h1 { margin: 0 0 .25rem; font-size: 1.4rem; }
+    .muted { color: #9aa0a6; }
+    .layout { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(300px, 400px); gap: 1.25rem; align-items: start; margin-top: 1rem; }
+    @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+    canvas { display: block; border-radius: .5rem; max-width: 100%; }
+    .panel { background: #1b1e24; border: 1px solid #333; border-radius: .75rem; padding: 1rem; margin-bottom: 1rem; }
+    .panel h2 { margin: 0 0 .6rem; font-size: .85rem; text-transform: uppercase; letter-spacing: .08em; color: #9aa0a6; }
+    input[type=text], select, button { font: inherit; padding: .4rem .6rem; border-radius: .5rem; border: 1px solid #444; background: #22252b; color: inherit; }
+    input[type=text] { width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; }
+    button { cursor: pointer; }
+    button.primary { background: #3d7bff; border-color: #3d7bff; color: white; }
+    .row { display: grid; grid-template-columns: 6.5rem 1fr 3rem; align-items: center; gap: .5rem; margin: .35rem 0; font-size: .9rem; }
+    .row output { text-align: right; color: #9aa0a6; font-family: ui-monospace, monospace; }
+    .row input[type=range] { width: 100%; }
+    .actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin: .5rem 0; }
+    .mode-only { display: none; }
+    body[data-mode=life] .life-only, body[data-mode=elementary] .elementary-only, body[data-mode=ant] .ant-only, body[data-mode=lsystem] .lsystem-only { display: block; }
+    p.help { margin: .4rem 0 0; font-size: .85rem; color: #9aa0a6; line-height: 1.45; }
+  </style>
+  <script src="../launchpad-chess/vendor/p5.min.js"></script>
+</head>
+<body data-mode="life">
+  <h1>Launchpad Automata</h1>
+  <div class="muted" id="status">Connecting to the Launchpad…</div>
+
+  <div class="layout">
+    <div id="sketch"></div>
+    <div>
+      <div class="panel">
+        <h2>Mode</h2>
+        <select id="mode" style="width:100%">
+          <option value="life">Game of Life</option>
+          <option value="elementary">Elementary automaton (Wolfram rules)</option>
+          <option value="ant">Langton's Ant</option>
+          <option value="lsystem">L-system turtle</option>
+        </select>
+        <div class="actions" style="margin-top:.6rem">
+          <button id="play" class="primary">Pause</button>
+          <button id="step">Step</button>
+          <button id="random">Random</button>
+          <button id="clear">Clear</button>
+        </div>
+        <div class="row"><label>speed</label><input type="range" id="speed" min="1" max="30" value="6"><output>6/s</output></div>
+        <div class="row"><label>wrap edges</label><input type="checkbox" id="wrap" checked><span></span></div>
+
+        <div class="mode-only life-only">
+          <div class="row"><label>rule</label><input type="text" id="life-rule" value="B3/S23"><span></span></div>
+          <p class="help">Birth/survival counts. Try B36/S23 (HighLife), B3/S012345678 (Life without death), B2/S (Seeds). Cells are coloured by age.</p>
+        </div>
+        <div class="mode-only elementary-only">
+          <div class="row"><label>rule</label><input type="range" id="eca-rule" min="0" max="255" value="90"><output>90</output></div>
+          <p class="help">Each tick computes the next generation from the bottom row and scrolls the board up, so you see the last eight generations. Rule 90 makes Sierpinski triangles from a single cell; 30 is chaotic; 110 is Turing complete. Press pads on the bottom row to seed.</p>
+        </div>
+        <div class="mode-only ant-only">
+          <div class="row"><label>ants</label><input type="range" id="ants" min="1" max="4" value="1"><output>1</output></div>
+          <p class="help">The ant turns right on a lit cell and left on a dark one, flips the cell, and steps. Press a pad to flip cells in its path; hold a pad for a moment to move the ant there.</p>
+        </div>
+        <div class="mode-only lsystem-only">
+          <div class="row"><label>preset</label><select id="ls-preset"><option value="dragon">dragon curve</option><option value="koch">Koch curve</option><option value="sierpinski">Sierpinski arrowhead</option><option value="plant">plant</option><option value="custom">custom</option></select><span></span></div>
+          <div class="row"><label>axiom</label><input type="text" id="ls-axiom" value="F"><span></span></div>
+          <div class="row"><label>rules</label><input type="text" id="ls-rules" value="F=F+G, G=F-G"><span></span></div>
+          <div class="row"><label>angle</label><input type="range" id="ls-angle" min="10" max="120" value="90"><output>90°</output></div>
+          <div class="row"><label>iterations</label><input type="range" id="ls-iter" min="1" max="8" value="6"><output>6</output></div>
+          <p class="help">F and G draw a step, + and − turn, [ and ] push and pop the turtle. The turtle walks the expanded string one command per tick, wrapping at the edges. Press a pad to restart the turtle there.</p>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Colour</h2>
+        <div class="row"><label>scheme</label><select id="scheme"><option value="age">age / step rainbow</option><option value="single">single colour</option><option value="heat">heat</option></select><span></span></div>
+        <div class="row"><label>colour</label><input type="color" id="color" value="#4bd8ff"><span></span></div>
+        <div class="row"><label>trail</label><input type="range" id="trail" min="0" max="0.9" step="0.1" value="0.5"><output>0.5</output></div>
+      </div>
+
+      <div class="panel">
+        <h2>On the Launchpad</h2>
+        <p class="help" style="margin:0">Press pads to seed. Logo: play / pause. Right column: speed. Arrows: ↑ step once, ↓ clear, ← random, → next mode. The board is the world; the screen is just a bigger window on it.</p>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="sketch.js"></script>
+</body>
+</html>

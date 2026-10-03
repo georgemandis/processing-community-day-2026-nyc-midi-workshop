@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Launchpad Chess</title>
+  <link rel="stylesheet" href="vendor/chessboard.min.css">
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; padding: 1.5rem; font-family: system-ui, sans-serif; background: #14161a; color: #e8e8e8; }
+    h1 { margin: 0 0 .25rem; font-size: 1.5rem; }
+    .muted { color: #9aa0a6; }
+    .layout { display: grid; grid-template-columns: minmax(280px, 480px) minmax(280px, 1fr); gap: 1.5rem; align-items: start; }
+    @media (max-width: 800px) { .layout { grid-template-columns: 1fr; } }
+    .panel { background: #1b1e24; border: 1px solid #333; border-radius: .75rem; padding: 1rem; margin-bottom: 1rem; }
+    .panel h2 { margin: 0 0 .6rem; font-size: .9rem; text-transform: uppercase; letter-spacing: .08em; color: #9aa0a6; }
+    button, select { font: inherit; padding: .45rem .8rem; border-radius: .5rem; border: 1px solid #444; background: #22252b; color: inherit; cursor: pointer; }
+    button.primary { background: #3d7bff; border-color: #3d7bff; color: white; }
+    .actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin: .4rem 0; }
+    label { display: inline-flex; gap: .4rem; align-items: center; }
+    input[type=range] { width: 9rem; }
+    .swatches { display: flex; gap: 4px; }
+    .swatch { width: 26px; height: 26px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 16px; color: #111; }
+    #status { font-size: 1.1rem; font-weight: 600; }
+    #moves { font-family: ui-monospace, monospace; font-size: .85rem; line-height: 1.5; max-height: 12rem; overflow: auto; white-space: pre-wrap; }
+    /* neutral board so the piece hues carry the meaning */
+    .white-1e1d7 { background-color: #d9d9d9 !important; color: #444 !important; }
+    .black-3c85d { background-color: #6b6b6b !important; color: #ddd !important; }
+    .highlight-target { box-shadow: inset 0 0 0 4px rgba(80, 220, 120, .9); }
+    .highlight-selected { box-shadow: inset 0 0 0 4px rgba(255, 255, 255, .9); }
+  </style>
+  <script src="vendor/jquery.min.js"></script>
+  <script src="vendor/chessboard.min.js"></script>
+</head>
+<body>
+  <h1>Launchpad Chess</h1>
+  <div class="muted" id="pad-status">Connecting to the Launchpad…</div>
+  <div class="layout" style="margin-top:1rem">
+    <div>
+      <div id="board" style="width: 100%"></div>
+      <div class="actions" style="margin-top:.6rem">
+        <button id="new" class="primary">New game</button>
+        <button id="undo">Undo</button>
+        <button id="flip">Flip</button>
+        <label>bot plays <select id="bot"><option value="">nobody</option><option value="b">black</option><option value="w">white</option></select></label>
+      </div>
+    </div>
+    <div>
+      <div class="panel">
+        <h2>Game</h2>
+        <div id="status">White to move</div>
+        <div id="moves" class="muted"></div>
+      </div>
+      <div class="panel">
+        <h2>Colours</h2>
+        <div class="actions"><label>white hue <input type="range" id="hue-w" min="0" max="359" value="210"></label><div class="swatches" id="sw-w"></div></div>
+        <div class="actions"><label>black hue <input type="range" id="hue-b" min="0" max="359" value="280"></label><div class="swatches" id="sw-b"></div></div>
+        <div class="actions">
+          <label>palette <select id="palette">
+            <option value="complement">base + complement</option>
+            <option value="spread">hue spread</option>
+            <option value="tints">tints of one hue</option>
+          </select></label>
+          <button id="randomize">Randomize</button><label><input type="checkbox" id="rotate"> slowly rotate</label>
+        </div>
+        <div class="muted" style="font-size:.85rem">Each side has a base hue. <b>base + complement</b>: pawns and knights on the base, bishops and rooks on the opposite hue, queen and king pale. <b>hue spread</b>: pieces fan out around the base. <b>tints</b>: one hue, pawn darkest to king brightest. The Launchpad gets the exact RGB by SysEx; the screen pieces are SVG filled with the same colour.</div>
+      </div>
+      <div class="panel">
+        <h2>On the Launchpad</h2>
+        <div class="muted" style="font-size:.85rem; line-height:1.5">
+          Press a piece, then press where it goes. Legal squares pulse green, captures pulse orange. Press the piece again to cancel. An illegal press flashes red.<br>
+          Arrow buttons: <b>↑</b> new game · <b>↓</b> undo · <b>←</b> flip · <b>→</b> toggle bot (lights green while the bot plays). The logo shows whose turn it is. Promotion: choose on the right column (queen, rook, bishop, knight) or press anywhere else for a queen.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { Launchpad, COLORS } from "../grid-controllers/launchpad.js";
+    import { Chess } from "./vendor/chess.min.js";
+
+    const $ = (id) => document.getElementById(id);
+    const game = new Chess();
+    const PIECES = ["p", "n", "b", "r", "q", "k"];
+    const GLYPH = { p: "♟", n: "♞", b: "♝", r: "♜", q: "♛", k: "♚" };
+    const LIGHTNESS = { p: 0.38, n: 0.48, b: 0.56, r: 0.64, q: 0.74, k: 0.86 };
+
+    // ---------------------------------------------------------------- colours
+    const hues = { w: +$("hue-w").value, b: +$("hue-b").value };
+    function hslToRgb(h, s, l) {
+      const k = (n) => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
+      const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
+      return [f(0), f(8), f(4)].map((v) => Math.round(v * 255));
+    }
+    // Palette modes: hue/saturation/lightness per piece from the side's base hue.
+    const PALETTES = {
+      tints: (h, p) => [h, 0.9, LIGHTNESS[p]],
+      spread: (h, p) => [(h + 360 + { p: 0, n: -28, b: 28, r: -56, q: 56, k: 0 }[p]) % 360, 0.9, { p: 0.4, n: 0.5, b: 0.5, r: 0.55, q: 0.6, k: 0.85 }[p]],
+      complement: (h, p) => ({ p: [h, 0.9, 0.4], n: [h, 0.9, 0.66], b: [(h + 180) % 360, 0.9, 0.42], r: [(h + 180) % 360, 0.9, 0.66], q: [h, 0.75, 0.82], k: [h, 0.35, 0.93] }[p]),
+    };
+    const paletteMode = () => $("palette").value;
+    const tint = (side, piece) => hslToRgb(...PALETTES[paletteMode()](hues[side], piece));   // 0..255
+    const tint127 = (side, piece) => tint(side, piece).map((v) => v >> 1);              // 0..127 for the Launchpad
+    const css = ([r, g, b]) => `rgb(${r},${g},${b})`;
+    function pieceURL(code) { // "wK" → data URL of an SVG glyph filled with that piece's tint
+      const side = code[0], piece = code[1].toLowerCase();
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 45 45"><text x="22.5" y="36" font-size="38" text-anchor="middle" fill="${css(tint(side, piece))}" stroke="#101010" stroke-width="1.2" font-family="'Segoe UI Symbol','Apple Symbols','DejaVu Sans',sans-serif">${GLYPH[piece]}</text></svg>`;
+      return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
+    }
+    function renderSwatches() {
+      for (const side of ["w", "b"]) {
+        $(`sw-${side}`).innerHTML = PIECES.map((p) => `<div class="swatch" style="background:${css(tint(side, p))}" title="${p}">${GLYPH[p]}</div>`).join("");
+      }
+    }
+
+    // ---------------------------------------------------------------- screen board
+    let board = null, orientation = "white";
+    function buildBoard() {
+      if (board) board.destroy();
+      board = Chessboard("board", {
+        draggable: true, position: game.fen(), orientation, pieceTheme: pieceURL,
+        onDragStart: (source, piece) => !game.game_over() && piece[0] === game.turn() && game.turn() !== botSide(),
+        onDrop: (source, target) => { const m = tryMove(source, target, "q"); return m ? undefined : "snapback"; },
+        onSnapEnd: () => board.position(game.fen()),
+      });
+      highlightScreen();
+    }
+    let rebuildTimer = null;
+    function rethemeSoon() { renderSwatches(); clearTimeout(rebuildTimer); rebuildTimer = setTimeout(() => { buildBoard(); renderPads(); }, 120); }
+    function highlightScreen() {
+      document.querySelectorAll("#board [data-square]").forEach((el) => el.classList.remove("highlight-target", "highlight-selected"));
+      if (!selected) return;
+      document.querySelector(`#board [data-square="${selected}"]`)?.classList.add("highlight-selected");
+      for (const m of targets) document.querySelector(`#board [data-square="${m.to}"]`)?.classList.add("highlight-target");
+    }
+
+    // ---------------------------------------------------------------- game flow
+    let selected = null, targets = [], pendingPromotion = null, flashTimer = null;
+    const botSide = () => $("bot").value;
+    function tryMove(from, to, promotion) {
+      const m = game.move({ from, to, promotion });
+      if (m) afterMove(m);
+      return m;
+    }
+    function afterMove() {
+      selected = null; targets = []; pendingPromotion = null;
+      board.position(game.fen());
+      highlightScreen();
+      updateStatus();
+      renderPads();
+      if (game.game_over()) announce();
+      else maybeBot();
+    }
+    function maybeBot() {
+      if (!botSide() || game.turn() !== botSide() || game.game_over()) return;
+      setTimeout(() => {
+        if (game.turn() !== botSide() || game.game_over()) return;
+        const moves = game.moves({ verbose: true });
+        const captures = moves.filter((m) => m.captured);
+        const pick = (captures.length && Math.random() < 0.6 ? captures : moves)[Math.floor(Math.random() * (captures.length && Math.random() < 0.6 ? captures.length : moves.length))];
+        tryMove(pick.from, pick.to, "q");
+      }, 700);
+    }
+    function updateStatus() {
+      const side = game.turn() === "w" ? "White" : "Black";
+      let s = `${side} to move`;
+      if (game.in_checkmate()) s = `Checkmate. ${side === "White" ? "Black" : "White"} wins.`;
+      else if (game.in_stalemate()) s = "Stalemate.";
+      else if (game.in_draw()) s = "Draw.";
+      else if (game.in_check()) s += " (check)";
+      $("status").textContent = s;
+      const h = game.history();
+      $("moves").textContent = h.map((m, i) => (i % 2 === 0 ? `${i / 2 + 1}. ${m}` : m)).join("  ");
+    }
+    function announce() {
+      if (!pad) return;
+      const text = game.in_checkmate() ? `${game.turn() === "w" ? "Black" : "White"} wins` : "Draw";
+      const side = game.turn() === "w" ? "b" : "w";
+      pad.text(text, { rgb: tint127(side, "k"), speed: 6 });
+    }
+    function newGame() { game.reset(); selected = null; targets = []; pendingPromotion = null; pad?.stopText(); board.position("start"); highlightScreen(); updateStatus(); renderPads(); maybeBot(); }
+    function undo() { game.undo(); if (botSide() && game.turn() === botSide()) game.undo(); selected = null; targets = []; pendingPromotion = null; board.position(game.fen()); highlightScreen(); updateStatus(); renderPads(); }
+    function flip() { orientation = orientation === "white" ? "black" : "white"; buildBoard(); renderPads(); }
+
+    // ---------------------------------------------------------------- launchpad
+    let pad = null;
+    const FILES = "abcdefgh";
+    const padToSquare = (x, y) => orientation === "white" ? FILES[x] + (8 - y) : FILES[7 - x] + (y + 1);
+    const squareToPad = (sq) => { const f = FILES.indexOf(sq[0]), r = +sq[1]; return orientation === "white" ? { x: f, y: 8 - r } : { x: 7 - f, y: r - 1 }; };
+
+    function renderPads() {
+      if (!pad) return;
+      const entries = [];
+      const targetBySq = new Map(targets.map((m) => [m.to, m]));
+      const inCheck = game.in_check();
+      for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+        const sq = padToSquare(x, y), piece = game.get(sq);
+        const t = targetBySq.get(sq);
+        if (sq === selected) entries.push({ x, y, rgb: [127, 127, 127] });
+        else if (t) entries.push({ x, y, pulse: t.captured ? COLORS.orange : COLORS.green });
+        else if (piece && inCheck && piece.type === "k" && piece.color === game.turn()) entries.push({ x, y, flash: [COLORS.red, 0] });
+        else if (piece) entries.push({ x, y, rgb: tint127(piece.color, piece.type) });
+        else entries.push({ x, y, rgb: (x + y) % 2 ? [2, 2, 2] : [6, 6, 6] });
+      }
+      // Top row: up = new game, down = undo, left = flip, right = bot. Unlit so they don't read as state; the bot button glows while the bot plays.
+      entries.push({ id: "top0", color: 0 }, { id: "top1", color: 0 }, { id: "top2", color: 0 }, { id: "top3", color: botSide() ? 21 : 0 });
+      for (let i = 4; i < 8; i++) entries.push({ id: `top${i}`, color: 0 });
+      const promo = pendingPromotion ? ["q", "r", "b", "n"] : [];
+      for (let i = 0; i < 8; i++) entries.push(promo[i] ? { id: `right${i}`, rgb: tint127(game.turn(), promo[i]) } : { id: `right${i}`, color: 0 });
+      entries.push({ id: "logo", rgb: game.game_over() ? [40, 40, 40] : tint127(game.turn(), "k") });
+      pad.setMany(entries);
+    }
+    function flashRed(x, y) {
+      pad.set(x, y, COLORS.red);
+      clearTimeout(flashTimer); flashTimer = setTimeout(renderPads, 180);
+    }
+    function onPad({ x, y, pressed }) {
+      if (!pressed) return;
+      const sq = padToSquare(x, y);
+      if (pendingPromotion) { finishPromotion("q"); if (sq !== pendingPromotion.to) return; }
+      if (game.game_over() || game.turn() === botSide()) { flashRed(x, y); return; }
+      const piece = game.get(sq);
+      if (selected) {
+        const t = targets.find((m) => m.to === sq);
+        if (t) {
+          if (t.promotion) { pendingPromotion = { from: selected, to: sq }; renderPads(); return; }
+          tryMove(selected, sq); return;
+        }
+        if (sq === selected) { selected = null; targets = []; renderPads(); highlightScreen(); return; }
+      }
+      if (piece && piece.color === game.turn()) {
+        selected = sq; targets = game.moves({ square: sq, verbose: true });
+        if (!targets.length) { selected = null; flashRed(x, y); return; }
+        renderPads(); highlightScreen(); return;
+      }
+      flashRed(x, y);
+    }
+    function finishPromotion(piece) { const p = pendingPromotion; pendingPromotion = null; if (p) tryMove(p.from, p.to, piece); }
+    function onButton({ id, pressed }) {
+      if (!pressed) return;
+      if (id === "top0") newGame();
+      else if (id === "top1") undo();
+      else if (id === "top2") flip();
+      else if (id === "top3") { $("bot").value = botSide() ? "" : (game.turn() === "w" ? "b" : "w"); renderPads(); maybeBot(); }
+      else if (pendingPromotion && /^right[0-3]$/.test(id)) finishPromotion(["q", "r", "b", "n"][+id[5]]);
+    }
+
+    try {
+      pad = await Launchpad.connect();
+      pad.on("pad", onPad);
+      pad.on("button", onButton);
+      $("pad-status").textContent = `Launchpad connected (${pad.input.name}). Programmer mode on; Live mode is restored when you leave.`;
+      window.addEventListener("beforeunload", () => pad.close());
+    } catch (e) {
+      $("pad-status").textContent = `No Launchpad: ${e.message}. The screen board still works.`;
+    }
+
+    // ---------------------------------------------------------------- UI wiring
+    $("new").addEventListener("click", newGame);
+    $("undo").addEventListener("click", undo);
+    $("flip").addEventListener("click", flip);
+    $("bot").addEventListener("change", () => { renderPads(); maybeBot(); });
+    $("hue-w").addEventListener("input", () => { hues.w = +$("hue-w").value; rethemeSoon(); });
+    $("hue-b").addEventListener("input", () => { hues.b = +$("hue-b").value; rethemeSoon(); });
+    $("palette").addEventListener("change", rethemeSoon);
+    $("randomize").addEventListener("click", () => {
+      hues.w = Math.floor(Math.random() * 360);
+      hues.b = (hues.w + 90 + Math.floor(Math.random() * 180)) % 360; // keep the sides at least 90° apart
+      $("hue-w").value = hues.w; $("hue-b").value = hues.b; rethemeSoon();
+    });
+    let rotateTimer = null;
+    $("rotate").addEventListener("change", () => {
+      clearInterval(rotateTimer); rotateTimer = null;
+      if ($("rotate").checked) rotateTimer = setInterval(() => { hues.w = (hues.w + 2) % 360; hues.b = (hues.b + 2) % 360; $("hue-w").value = hues.w; $("hue-b").value = hues.b; rethemeSoon(); }, 250);
+    });
+    window.addEventListener("resize", () => board?.resize());
+
+    renderSwatches();
+    buildBoard();
+    updateStatus();
+    renderPads();
+    window.chess = { game, get pad() { return pad; }, onPad, onButton, renderPads, tryMove, newGame }; // for poking from the console
+  </script>
+</body>
+</html>

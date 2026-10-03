@@ -1,0 +1,7 @@
+{
+  "_comment": "Copy to pipsqueak-config.json (same folder) to describe your PipSqueak. This example is the stock map measured on a factory unit on 2026-09-12. 'invert' flips an axis. The button is either a CC ({\"cc\": 25, \"threshold\": 64}) or a note ({\"note\": 60}).",
+  "x": { "cc": 17, "center": 60, "min": 0, "max": 126, "invert": false },
+  "y": { "cc": 20, "center": 68, "min": 0, "max": 126, "invert": false },
+  "button": { "cc": 25, "threshold": 64 },
+  "deadzone": 0.1
+}

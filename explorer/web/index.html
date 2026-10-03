@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MIDI Explorer</title>
+  <meta name="description" content="See what your MIDI controller sends. Send something back. Web MIDI and p5.js, nothing to install.">
+  <style>
+    :root { color-scheme: dark; }
+    html, body { margin: 0; padding: 0; background: #0e1014; color: #ececec; overflow: hidden; height: 100%; }
+    canvas { display: block; }
+    #nomidi { position: fixed; inset: 0; display: none; place-items: center; padding: 2rem; text-align: center;
+              font: 20px/1.5 Menlo, Monaco, Consolas, monospace; background: #0e1014; }
+    #nomidi b { color: #ff5d73; }
+  </style>
+  <!-- p5 from a CDN, vendored copy as fallback so it works offline and from file:// -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.11.3/p5.min.js"></script>
+  <script>window.p5 || document.write('<script src="vendor/p5.min.js"><\/script>');</script>
+</head>
+<body>
+  <div id="nomidi"><div><b>No Web MIDI in this browser.</b><br>Use Chrome, Edge or Opera on a desktop. Firefox and Safari do not have it.<br><br>The Processing edition in <code>explorer/MidiExplorer</code> runs anywhere.</div></div>
+  <script src="sketch.js"></script>
+</body>
+</html>

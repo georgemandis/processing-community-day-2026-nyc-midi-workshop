@@ -1,0 +1,7 @@
+{
+  "_comment": "George's PipSqueaker, firmware 2.7.0-beta.3 (measured 2026-10-02): stick on CC 10 (horizontal) and CC 7 (vertical), channel 1, button is Note 60. Incoming Note On 60 flashes its LED red for 200 ms.",
+  "x": { "cc": 10, "center": 67, "min": 0, "max": 127, "invert": false },
+  "y": { "cc": 7, "center": 70, "min": 0, "max": 127, "invert": false },
+  "button": { "note": 60 },
+  "deadzone": 0.1
+}

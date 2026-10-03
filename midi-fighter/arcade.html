@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Midi Fighter Arcade</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; padding: 1.25rem; background: #14161a; color: #e8e8e8; font-family: system-ui, sans-serif; }
+    h1 { margin: 0 0 .25rem; font-size: 1.4rem; }
+    .muted { color: #9aa0a6; }
+    .layout { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(300px, 380px); gap: 1.25rem; align-items: start; margin-top: 1rem; }
+    @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+    canvas { display: block; border-radius: .5rem; max-width: 100%; background: #0f1114; }
+    .panel { background: #1b1e24; border: 1px solid #333; border-radius: .75rem; padding: 1rem; margin-bottom: 1rem; }
+    .panel h2 { margin: 0 0 .6rem; font-size: .85rem; text-transform: uppercase; letter-spacing: .08em; color: #9aa0a6; }
+    select, button, input[type=text] { font: inherit; padding: .4rem .6rem; border-radius: .5rem; border: 1px solid #444; background: #22252b; color: inherit; }
+    button { cursor: pointer; }
+    button.primary { background: #3d7bff; border-color: #3d7bff; color: white; }
+    button.danger { background: #7a2030; border-color: #7a2030; color: white; }
+    .row { display: grid; grid-template-columns: 6.5rem 1fr 3.5rem; align-items: center; gap: .5rem; margin: .35rem 0; font-size: .9rem; }
+    .row output { text-align: right; color: #9aa0a6; font-family: ui-monospace, monospace; }
+    .row input[type=range] { width: 100%; }
+    .actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin: .5rem 0; }
+    .modes { display: grid; grid-template-columns: repeat(5, 1fr); gap: .4rem; }
+    .modes button { padding: .5rem .2rem; font-size: .85rem; }
+    .modes button.active { background: #3d7bff; border-color: #3d7bff; color: white; }
+    p.help { margin: .4rem 0 0; font-size: .85rem; color: #9aa0a6; line-height: 1.45; }
+    #sound { display: none; padding: .5rem .8rem; background: #3d7bff22; border: 1px solid #3d7bff; border-radius: .5rem; margin-bottom: .6rem; cursor: pointer; }
+    #sound.show { display: block; }
+  </style>
+</head>
+<body>
+  <h1>Midi Fighter Arcade</h1>
+  <div class="muted" id="status">Connecting…</div>
+  <div class="layout">
+    <div>
+      <div id="sound">Click here once to enable sound (browsers require a click before audio can play).</div>
+      <canvas id="view" width="760" height="420"></canvas>
+      <p class="help" id="geometry"></p>
+    </div>
+    <div>
+      <div class="panel">
+        <h2>Mode</h2>
+        <div class="modes" id="modes"></div>
+        <p class="help" id="help"></p>
+      </div>
+      <div class="panel" id="controls-panel">
+        <h2 id="controls-title">Controls</h2>
+        <div id="controls"></div>
+      </div>
+      <div class="panel">
+        <h2>Device</h2>
+        <div class="row"><label>mode</label><select id="dev-mode"><option value="internal">four banks internal</option><option value="default">default (16 buttons)</option></select><span></span></div>
+        <p class="help">Auto-detected when you press a bank button. The page keeps a shadow of every bank's LEDs and writes to banks you're not looking at, which is how the device "remembers".</p>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="arcade.js"></script>
+</body>
+</html>

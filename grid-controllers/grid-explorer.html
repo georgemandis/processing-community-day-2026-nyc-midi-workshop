@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Grid Controller Explorer</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; padding: 1.5rem; font-family: system-ui, sans-serif; background: #14161a; color: #e8e8e8; }
+    h1 { margin: 0 0 .25rem; font-size: 1.5rem; }
+    .muted { color: #9aa0a6; }
+    header { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+    button, label.chip { font: inherit; padding: .45rem .8rem; border-radius: .5rem; border: 1px solid #444; background: #22252b; color: inherit; cursor: pointer; }
+    button.primary { background: #3d7bff; border-color: #3d7bff; color: white; }
+    button.rec { background: #ff5d73; border-color: #ff5d73; color: white; }
+    button:disabled { opacity: .4; cursor: default; }
+    .actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+    label.chip { display: inline-flex; gap: .4rem; align-items: center; }
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    @media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
+    .panel { background: #1b1e24; border: 1px solid #333; border-radius: .75rem; padding: 1rem; min-height: 6rem; margin-bottom: 1rem; }
+    .panel h2 { margin: 0 0 .6rem; font-size: .95rem; text-transform: uppercase; letter-spacing: .08em; color: #9aa0a6; display: flex; justify-content: space-between; align-items: baseline; }
+    .panel h2 span { text-transform: none; letter-spacing: 0; font-family: ui-monospace, monospace; }
+    table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: .9rem; }
+    th, td { text-align: right; padding: .2rem .4rem; border-bottom: 1px solid #2a2d33; white-space: nowrap; }
+    th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; font-family: ui-monospace, monospace; }
+    pre { margin: 0; font-size: .8rem; line-height: 1.3; max-height: 20rem; overflow: auto; white-space: pre; color: #b8bec5; }
+    .devices { display: flex; flex-wrap: wrap; gap: 1.5rem; }
+    .device { display: inline-grid; gap: 4px; }
+    .device .cell { width: 34px; height: 34px; border-radius: 6px; background: #2a2d33; border: 1px solid #3a3d44; display: flex; align-items: center; justify-content: center; font-size: .6rem; font-family: ui-monospace, monospace; color: #7d838a; transition: background .08s; }
+    .device .cell.round { border-radius: 50%; }
+    .device .cell.on { background: #ffd166; color: #14161a; border-color: #ffd166; }
+    .device .cell.seen { border-color: #3d7bff; }
+    .device .cell.side { background: #1f2126; }
+    .device .cell.blank { visibility: hidden; }
+    .device-wrap { display: flex; flex-direction: column; gap: .5rem; }
+    .device-wrap h3 { margin: 0; font-size: .9rem; }
+    .bars { display: grid; grid-template-columns: 5rem 1fr 3rem; gap: .3rem .6rem; align-items: center; font-family: ui-monospace, monospace; font-size: .8rem; }
+    .bar { height: 10px; background: #2a2d33; border-radius: 5px; overflow: hidden; }
+    .bar i { display: block; height: 100%; width: 0; background: #3d7bff; }
+    .flags { display: flex; gap: .5rem; flex-wrap: wrap; }
+    .flag { padding: .15rem .5rem; border-radius: 1rem; background: #2a2d33; font-size: .75rem; font-family: ui-monospace, monospace; }
+    .flag.on { background: #ffd166; color: #14161a; }
+    #unmapped { color: #ffd166; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Grid Controller Explorer</h1>
+      <div class="muted" id="status">Requesting MIDI access…</div>
+    </div>
+    <div class="actions" id="inputs"></div>
+  </header>
+
+  <div class="panel">
+    <h2>Devices <span id="unmapped"></span></h2>
+    <div class="devices" id="devices"></div>
+  </div>
+
+  <div class="panel" id="learn-panel" hidden>
+    <h2>Learn layout</h2>
+    <div id="learn-step" style="font-size:1.3rem;font-weight:700;margin-bottom:.5rem"></div>
+    <div class="actions">
+      <button id="learn-skip">Skip this one</button>
+      <button id="learn-cancel">Cancel</button>
+      <button id="learn-copy" hidden>Copy map JSON</button>
+    </div>
+    <pre id="learn-result" style="margin-top:.6rem;max-height:14rem"></pre>
+  </div>
+
+  <div class="panel">
+    <h2>Recording</h2>
+    <div class="actions">
+      <button id="record" class="primary">Start recording</button>
+      <button id="download" disabled>Download JSON</button>
+      <button id="clear">Clear stats</button>
+      <span class="muted" id="rec-status">Not recording</span>
+    </div>
+  </div>
+
+  <div class="cols">
+    <div class="panel">
+      <h2>Live <span id="rate">0 msg/s</span></h2>
+      <table id="live"><thead><tr><th>device</th><th>key</th><th>now</th><th>min</th><th>max</th><th>count</th></tr></thead><tbody></tbody></table>
+    </div>
+    <div class="panel">
+      <h2>Raw (latest first)</h2>
+      <pre id="log"></pre>
+    </div>
+  </div>
+
+  <script type="module">
+    // ------------------------------------------------------------------ decoding
+    function decode(data) {
+      const [status, d1 = 0, d2 = 0] = data;
+      if (status === 0xf0) return { type: "sysex", key: "sysex", value: data.length, channel: 0 };
+      if (status >= 0xf0) return { type: "system", key: `sys:${status.toString(16)}`, value: d1, channel: 0 };
+      const type = status & 0xf0, channel = (status & 0x0f) + 1;
+      switch (type) {
+        case 0x90: return { type: "note", key: `ch${channel} note ${d1}`, number: d1, value: d2, on: d2 > 0, channel };
+        case 0x80: return { type: "note", key: `ch${channel} note ${d1}`, number: d1, value: 0, on: false, channel };
+        case 0xb0: return { type: "cc", key: `ch${channel} cc ${d1}`, number: d1, value: d2, channel };
+        case 0xa0: return { type: "polyat", key: `ch${channel} polyat ${d1}`, number: d1, value: d2, channel };
+        case 0xd0: return { type: "pressure", key: `ch${channel} pressure`, number: 0, value: d1, channel };
+        case 0xe0: return { type: "pb", key: `ch${channel} bend`, number: 0, value: d1 | (d2 << 7), channel };
+        default: return { type: "other", key: `ch${channel} ${type.toString(16)}`, number: d1, value: d2, channel };
+      }
+    }
+
+    // ------------------------------------------------------------------ device profiles
+    // Each profile: match(inputName), build(container) -> view, apply(view, decoded) -> true if mapped.
+    const PROFILES = {
+      launchpad: {
+        name: "Launchpad Mini MK3",
+        match: (n) => /LPMiniMK3 MIDI/i.test(n),
+        outputMatch: (n) => /LPMiniMK3 MIDI/i.test(n),
+        build(root) {
+          const grid = el("div", "device");
+          grid.style.gridTemplateColumns = "repeat(9, 34px)";
+          const cells = {};
+          for (let row = 9; row >= 1; row--) {
+            for (let col = 1; col <= 9; col++) {
+              const id = row * 10 + col;
+              const isCC = row === 9 || col === 9;
+              const c = el("div", "cell" + (isCC ? " round" : ""));
+              c.textContent = id;
+              c.title = isCC ? `CC ${id}` : `note ${id}`;
+              grid.append(c);
+              cells[(isCC ? "cc" : "note") + id] = c;
+            }
+          }
+          const note = el("div", "muted");
+          note.style.fontSize = ".8rem";
+          note.textContent = "Numbering is Programmer mode. Switch it on above so the pads match this map.";
+          root.append(grid, note);
+          return { cells };
+        },
+        apply(view, d) {
+          if (d.type !== "note" && d.type !== "cc") return false;
+          const c = view.cells[(d.type === "cc" ? "cc" : "note") + d.number];
+          if (!c) return false;
+          c.classList.add("seen");
+          c.classList.toggle("on", d.value > 0);
+          return true;
+        },
+      },
+      midifighter: {
+        name: "Midi Fighter 3D",
+        match: (n) => /midi ?fighter/i.test(n) && !/classic/i.test(n),
+        learn: { count: 16, label: (i) => `button ${i + 1} (row ${Math.floor(i / 4) + 1}, column ${(i % 4) + 1})` },
+        build(root) {
+          const wrap = el("div");
+          // bank buttons
+          const banks = el("div", "device"); banks.style.gridTemplateColumns = "repeat(4, 34px)"; banks.style.marginLeft = "38px";
+          const bankCells = [];
+          for (let i = 0; i < 4; i++) { const c = el("div", "cell"); c.style.height = "14px"; c.textContent = ""; c.title = `bank ${i + 1}`; banks.append(c); bankCells.push(c); }
+          // arcade grid with side buttons
+          const grid = el("div", "device"); grid.style.gridTemplateColumns = "34px repeat(4, 34px) 34px"; grid.style.marginTop = "6px";
+          const buttons = [], sides = { L: [], R: [] };
+          for (let r = 0; r < 4; r++) {
+            const l = el("div", "cell side round" + (r === 3 ? " blank" : "")); l.textContent = r < 3 ? `L${r + 1}` : ""; grid.append(l); if (r < 3) sides.L.push(l);
+            for (let c = 0; c < 4; c++) { const b = el("div", "cell round"); b.textContent = r * 4 + c + 1; grid.append(b); buttons.push(b); }
+            const rr = el("div", "cell side round" + (r === 3 ? " blank" : "")); rr.textContent = r < 3 ? `R${r + 1}` : ""; grid.append(rr); if (r < 3) sides.R.push(rr);
+          }
+          // tilt bars and flags
+          const bars = el("div", "bars"); bars.style.marginTop = ".6rem";
+          const tilt = {};
+          for (const [cc, label] of [[0, "left"], [1, "forward"], [2, "right"], [3, "back"]]) {
+            const name = el("span"); name.textContent = `tilt ${label}`;
+            const bar = el("div", "bar"); const fill = el("i"); bar.append(fill);
+            const val = el("span"); val.textContent = "0";
+            bars.append(name, bar, val);
+            tilt[cc] = { fill, val };
+          }
+          const flags = el("div", "flags"); flags.style.marginTop = ".5rem";
+          const flag = {};
+          for (const k of ["tilting", "picked up", "rotate ccw", "rotate cw"]) { const f = el("span", "flag"); f.textContent = k; flags.append(f); flag[k] = f; }
+          const bankLabel = el("div", "muted"); bankLabel.style.fontSize = ".8rem"; bankLabel.textContent = "bank: unknown until a bank button is pressed";
+          wrap.append(banks, grid, bars, flags, bankLabel);
+          root.append(wrap);
+          return { bankCells, buttons, sides, tilt, flag, bankLabel, bank: 1 };
+        },
+        apply(view, d) {
+          if (d.type === "note" && d.channel === 3) {
+            // Arcade buttons: bank b covers notes 36+16(b-1) .. +15; top row is the highest four.
+            const bank = Math.floor((d.number - 36) / 16) + 1;
+            if (bank < 1 || bank > 4) return false;
+            const i = (d.number - 36) % 16;            // 0..15 from bottom-left
+            const row = 3 - Math.floor(i / 4), col = i % 4;
+            const btn = view.buttons[row * 4 + col];
+            btn.classList.add("seen"); btn.classList.toggle("on", d.on);
+            if (bank !== view.bank) { view.bank = bank; view.bankLabel.textContent = `bank: ${bank}`; view.bankCells.forEach((c, k) => c.classList.toggle("on", k === bank - 1)); }
+            return true;
+          }
+          if (d.type === "note" && d.channel === 4) {
+            if (d.number <= 3) { // bank change
+              if (d.on) { view.bank = d.number + 1; view.bankLabel.textContent = `bank: ${view.bank}`; view.bankCells.forEach((c, k) => c.classList.toggle("on", k === d.number)); }
+              return true;
+            }
+            if (d.number === 17) { view.flag["tilting"].classList.toggle("on", d.on); return true; }
+            if (d.number === 29) { view.flag["picked up"].classList.toggle("on", d.on); return true; }
+            // side switches: bank 1 = 20..25 (L3, L2, L1, R3, R2, R1), later banks +6 each
+            const s = (d.number - 20) % 6, sb = Math.floor((d.number - 20) / 6);
+            if (d.number >= 20 && sb < 4) {
+              const c = s < 3 ? view.sides.L[2 - s] : view.sides.R[5 - s];
+              c.classList.add("seen"); c.classList.toggle("on", d.on);
+              return true;
+            }
+            return false;
+          }
+          if (d.type === "cc" && d.channel === 4 && d.number <= 3) {
+            const t = view.tilt[d.number]; t.fill.style.width = `${(d.value / 127) * 100}%`; t.val.textContent = d.value;
+            return true;
+          }
+          if (d.type === "cc" && (d.channel === 4 || d.channel === 5) && d.number >= 36 && d.number <= 99) {
+            const f = view.flag[d.channel === 4 ? "rotate ccw" : "rotate cw"];
+            f.classList.add("on"); f.textContent = `rotate ${d.channel === 4 ? "ccw" : "cw"} ${d.value}`;
+            clearTimeout(f._t); f._t = setTimeout(() => f.classList.remove("on"), 300);
+            return true;
+          }
+          return false;
+        },
+      },
+      midifighterclassic: {
+        name: "Midi Fighter Classic",
+        match: (n) => /midi ?fighter classic/i.test(n),
+        learn: { count: 16, label: (i) => `button ${i + 1} (row ${Math.floor(i / 4) + 1}, column ${(i % 4) + 1})` },
+        build(root) {
+          const grid = el("div", "device"); grid.style.gridTemplateColumns = "repeat(4, 34px)";
+          const buttons = [];
+          for (let i = 0; i < 16; i++) { const b = el("div", "cell round"); b.textContent = i + 1; grid.append(b); buttons.push(b); }
+          const note = el("div", "muted"); note.style.fontSize = ".8rem";
+          note.textContent = "Default map: notes 36–51 on channel 3, 48 top-left. Four Banks Internal mode is detected from the top row. Use Learn layout if yours differs.";
+          const bankLabel = el("div", "muted"); bankLabel.style.fontSize = ".8rem"; bankLabel.textContent = "mode: default (16 notes) until a bank-select note is seen";
+          root.append(grid, note, bankLabel);
+          return { buttons, bankLabel, mode: "default", bank: null };
+        },
+        apply(view, d) {
+          if (d.type !== "note") return false;
+          const light = (index) => { const b = view.buttons[index]; b.classList.add("seen"); b.classList.toggle("on", d.on); };
+          if (d.number <= 3) {
+            // Top row in Four Banks Internal mode: bank select, notes 0–3 left to right.
+            view.mode = "internal";
+            if (d.on) { view.bank = d.number + 1; view.bankLabel.textContent = `mode: four banks internal, bank ${view.bank}`; }
+            light(d.number);
+            return true;
+          }
+          if (d.number < 36 || d.number > 99) return false;
+          if (view.mode === "internal") {
+            // Twelve notes per bank, base 36 + 12·(bank−1): bottom row first, top row is the selectors.
+            const rel = d.number - 36, bank = Math.floor(rel / 12) + 1, i = rel % 12;
+            const row = 3 - Math.floor(i / 4), col = i % 4;
+            if (bank !== view.bank) { view.bank = bank; view.bankLabel.textContent = `mode: four banks internal, bank ${bank}`; }
+            light(row * 4 + col);
+            return true;
+          }
+          // Default and Four Banks External: sixteen notes per bank, bottom-left first, 36 + 16·(bank−1).
+          const i = (d.number - 36) % 16, row = 3 - Math.floor(i / 4), col = i % 4;
+          light(row * 4 + col);
+          return true;
+        },
+      },
+      generic: {
+        name: "Other",
+        match: () => true,
+        build(root) { const p = el("div", "muted"); p.textContent = "No picture for this device; watch the live table."; root.append(p); return {}; },
+        apply() { return false; },
+      },
+    };
+
+    function el(tag, cls) { const e = document.createElement(tag); if (cls) e.className = cls; return e; }
+    const $ = (id) => document.getElementById(id);
+
+    // ------------------------------------------------------------------ state
+    let midi = null;
+    const listening = new Map();   // input.id -> { input, profile, view, name }
+    const seenInputs = new Set();  // input ids we've offered before, so hot-plug refreshes keep user choices
+    const liveStats = new Map();   // "device|key" -> stats
+    const logLines = [];
+    const rateWindow = [];
+    const unmapped = new Set();
+    let recording = null;          // { startedAt, t0, messages }
+    let lpOutput = null;
+
+    // ------------------------------------------------------------------ MIDI setup
+    try {
+      midi = await navigator.requestMIDIAccess({ sysex: true }).catch(() => navigator.requestMIDIAccess());
+      midi.onstatechange = refreshInputs;
+      refreshInputs();
+    } catch (e) {
+      $("status").textContent = `Could not get MIDI access: ${e.message}. Use Chrome on https:// or localhost.`;
+    }
+
+    function refreshInputs() {
+      const inputs = [...midi.inputs.values()];
+      const box = $("inputs");
+      box.innerHTML = "";
+      for (const input of inputs) {
+        const lab = el("label", "chip");
+        const cb = el("input"); cb.type = "checkbox";
+        const profile = pickProfile(input.name);
+        // Keep the user's choice for inputs we've seen; new devices default on when we have a picture for them.
+        cb.checked = seenInputs.has(input.id) ? listening.has(input.id) : profile !== PROFILES.generic;
+        seenInputs.add(input.id);
+        cb.addEventListener("change", () => (cb.checked ? listen(input) : unlisten(input)));
+        lab.append(cb, document.createTextNode(input.name));
+        box.append(lab);
+        if (cb.checked && !listening.has(input.id)) listen(input);
+      }
+      for (const id of [...listening.keys()]) if (!midi.inputs.has(id)) unlisten(listening.get(id).input);
+      lpOutput = [...midi.outputs.values()].find((o) => PROFILES.launchpad.outputMatch(o.name)) ?? null;
+      renderLaunchpadControls();
+      $("status").textContent = inputs.length ? `${inputs.length} MIDI input${inputs.length > 1 ? "s" : ""} found` : "No MIDI inputs found. Plug something in.";
+    }
+
+    function pickProfile(name) {
+      for (const p of Object.values(PROFILES)) if (p.match(name)) return p;
+      return PROFILES.generic;
+    }
+
+    function listen(input) {
+      if (listening.has(input.id)) return;
+      const profile = pickProfile(input.name);
+      const wrap = el("div", "device-wrap");
+      const h = el("h3"); h.textContent = `${profile.name} — ${input.name}`;
+      wrap.append(h);
+      const view = profile.build(wrap);
+      if (profile.learn) {
+        const lb = el("button"); lb.textContent = "Learn layout"; lb.style.alignSelf = "flex-start";
+        lb.addEventListener("click", () => startLearn(listening.get(input.id)));
+        wrap.append(lb);
+      }
+      $("devices").append(wrap);
+      const entry = { input, profile, view, wrap, name: input.name };
+      listening.set(input.id, entry);
+      input.onmidimessage = (ev) => onMessage(entry, ev);
+    }
+    function unlisten(input) {
+      const entry = listening.get(input.id);
+      if (!entry) return;
+      input.onmidimessage = null;
+      entry.wrap.remove();
+      listening.delete(input.id);
+    }
+
+    // ------------------------------------------------------------------ Launchpad programmer mode (needs SysEx access)
+    const LP_HEADER = [0xf0, 0x00, 0x20, 0x29, 0x02, 0x0d];
+    function lpSend(bytes) { lpOutput?.send([...LP_HEADER, ...bytes, 0xf7]); }
+    function renderLaunchpadControls() {
+      $("lp-controls")?.remove();
+      if (!lpOutput) return;
+      const box = el("div", "actions"); box.id = "lp-controls"; box.style.marginTop = ".5rem";
+      const canSysex = !!midi.sysexEnabled;
+      const b1 = el("button"); b1.textContent = "Launchpad: Programmer mode"; b1.disabled = !canSysex;
+      const b2 = el("button"); b2.textContent = "Launchpad: Live mode"; b2.disabled = !canSysex;
+      b1.addEventListener("click", () => lpSend([0x0e, 0x01]));
+      b2.addEventListener("click", () => lpSend([0x0e, 0x00]));
+      const note = el("span", "muted"); note.textContent = canSysex ? "Live mode is restored when you leave this page." : "SysEx permission was declined, so mode switching is off.";
+      box.append(b1, b2, note);
+      $("devices").parentElement.append(box);
+    }
+    window.addEventListener("beforeunload", () => lpSend([0x0e, 0x00]));
+
+    // ------------------------------------------------------------------ message handling
+    function onMessage(entry, ev) {
+      const data = [...ev.data];
+      const now = performance.now();
+      const d = decode(data);
+      if (learn && learn.entry === entry && d.type === "note" && d.on) captureLearn(d);
+      let mapped;
+      if (entry.learned && d.type === "note" && entry.learned.has(d.key)) {
+        const btn = entry.view.buttons[entry.learned.get(d.key)];
+        btn.classList.add("seen"); btn.classList.toggle("on", d.on);
+        mapped = true;
+      } else {
+        mapped = entry.profile.apply(entry.view, d);
+      }
+      if (!mapped && d.type !== "sysex" && d.type !== "system") unmapped.add(`${entry.name}: ${d.key}`);
+
+      if (recording) recording.messages.push({ t: +(now - recording.t0).toFixed(1), device: entry.name, data });
+
+      const sk = `${entry.name}|${d.key}`;
+      const s = liveStats.get(sk) || { device: entry.name, key: d.key, now: 0, min: Infinity, max: -Infinity, count: 0 };
+      s.now = d.value; s.min = Math.min(s.min, d.value); s.max = Math.max(s.max, d.value); s.count++;
+      liveStats.set(sk, s);
+
+      rateWindow.push(now);
+      const hex = data.slice(0, 12).map((b) => b.toString(16).padStart(2, "0")).join(" ") + (data.length > 12 ? " …" : "");
+      logLines.unshift(`${entry.name.padEnd(22).slice(0, 22)} ${hex.padEnd(10)} ${d.key}${d.type === "note" ? (d.on ? " on" : " off") : ""}=${d.value}`);
+      if (logLines.length > 40) logLines.length = 40;
+      scheduleRender();
+    }
+
+    let renderQueued = false;
+    function scheduleRender() { if (renderQueued) return; renderQueued = true; requestAnimationFrame(() => { renderQueued = false; render(); }); }
+    function render() {
+      const rows = [...liveStats.values()].sort((a, b) => a.device.localeCompare(b.device) || a.key.localeCompare(b.key, undefined, { numeric: true }));
+      $("live").querySelector("tbody").innerHTML = rows.map((s) => `<tr><td>${s.device}</td><td>${s.key}</td><td>${s.now}</td><td>${s.min}</td><td>${s.max}</td><td>${s.count}</td></tr>`).join("");
+      $("log").textContent = logLines.join("\n");
+      const cutoff = performance.now() - 1000;
+      while (rateWindow.length && rateWindow[0] < cutoff) rateWindow.shift();
+      $("rate").textContent = `${rateWindow.length} msg/s`;
+      $("unmapped").textContent = unmapped.size ? `unmapped: ${[...unmapped].join(", ")}` : "";
+    }
+    setInterval(render, 500);
+
+    // ------------------------------------------------------------------ learn layout
+    // Press each button in reading order; we record which note each one sends and use that
+    // map for the picture from then on. The JSON is what the device package will consume.
+    let learn = null; // { entry, index, map: [{ index, key, channel, number }] }
+    function startLearn(entry) {
+      learn = { entry, index: 0, map: [] };
+      entry.learned = null;
+      entry.view.buttons.forEach((b) => b.classList.remove("on", "seen"));
+      $("learn-panel").hidden = false; $("learn-copy").hidden = true; $("learn-result").textContent = "";
+      showLearnStep();
+    }
+    function showLearnStep() {
+      const { count, label } = learn.entry.profile.learn;
+      $("learn-step").textContent = learn.index < count ? `Press ${label(learn.index)}` : "Done";
+      learn.entry.view.buttons.forEach((b, i) => b.classList.toggle("on", i === learn.index));
+    }
+    function captureLearn(d) {
+      if (learn.map.some((m) => m.key === d.key)) return; // same button twice
+      learn.map.push({ index: learn.index, key: d.key, channel: d.channel, number: d.number });
+      advanceLearn();
+    }
+    function advanceLearn() {
+      learn.index++;
+      if (learn.index >= learn.entry.profile.learn.count) return finishLearn();
+      showLearnStep();
+    }
+    function finishLearn() {
+      const entry = learn.entry;
+      entry.learned = new Map(learn.map.map((m) => [m.key, m.index]));
+      const out = { device: entry.name, buttons: learn.map.map((m) => ({ index: m.index, channel: m.channel, note: m.number })) };
+      $("learn-step").textContent = `Learned ${learn.map.length} of ${entry.profile.learn.count}. The picture now uses this map.`;
+      $("learn-result").textContent = JSON.stringify(out, null, 1).replace(/\n\s*(?=[\d"}\]])/g, " ");
+      $("learn-copy").hidden = false;
+      entry.view.buttons.forEach((b) => b.classList.remove("on"));
+      learn = null;
+    }
+    $("learn-skip").addEventListener("click", () => learn && advanceLearn());
+    $("learn-cancel").addEventListener("click", () => { learn = null; $("learn-panel").hidden = true; });
+    $("learn-copy").addEventListener("click", async () => { await navigator.clipboard.writeText($("learn-result").textContent); $("learn-copy").textContent = "Copied"; setTimeout(() => ($("learn-copy").textContent = "Copy map JSON"), 1200); });
+
+    // ------------------------------------------------------------------ recording
+    $("record").addEventListener("click", () => {
+      if (recording) {
+        recording.finishedAt = new Date().toISOString();
+        $("record").textContent = "Start recording"; $("record").className = "primary";
+        $("download").disabled = false;
+        $("rec-status").textContent = `Recorded ${recording.messages.length} messages`;
+        window._lastRecording = recording;
+        recording = null;
+      } else {
+        recording = { startedAt: new Date().toISOString(), t0: performance.now(), devices: [...listening.values()].map((e) => e.name), messages: [] };
+        $("record").textContent = "Stop recording"; $("record").className = "rec";
+        $("download").disabled = true;
+        $("rec-status").textContent = "Recording…";
+      }
+    });
+    $("download").addEventListener("click", () => {
+      const r = window._lastRecording; if (!r) return;
+      const blob = new Blob([JSON.stringify(r)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `grid-session-${r.startedAt.replace(/[:.]/g, "-")}.json`;
+      a.click(); URL.revokeObjectURL(a.href);
+    });
+    $("clear").addEventListener("click", () => {
+      liveStats.clear(); logLines.length = 0; unmapped.clear();
+      document.querySelectorAll(".cell").forEach((c) => c.classList.remove("on", "seen"));
+      render();
+    });
+  </script>
+</body>
+</html>

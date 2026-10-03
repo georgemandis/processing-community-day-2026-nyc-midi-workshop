@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Midi Fighter Fireworks</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-family: ui-monospace, monospace; }
+    canvas { display: block; }
+    #hud { position: fixed; left: 1rem; bottom: 1rem; font-size: 13px; line-height: 1.5; color: #9aa0a6; white-space: pre; pointer-events: none; }
+    #sound { position: fixed; top: 1rem; left: 1rem; padding: .5rem .8rem; background: #3d7bff33; border: 1px solid #3d7bff; border-radius: .5rem; color: #cde; font-size: 13px; cursor: pointer; }
+    #sound.off { display: none; }
+  </style>
+  <script src="../launchpad-chess/vendor/p5.min.js"></script>
+</head>
+<body>
+  <div id="sound">click once for sound</div>
+  <div id="hud"></div>
+  <script type="module" src="fireworks.js"></script>
+</body>
+</html>

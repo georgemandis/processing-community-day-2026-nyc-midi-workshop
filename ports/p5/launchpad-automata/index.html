@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Launchpad Automata (p5.js + midi-helpers)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>html, body { margin: 0; background: #111; display: flex; justify-content: center; } canvas { display: block; }</style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.11.3/p5.min.js"></script>
+  <script>
+    // midi-helpers.js: the repo's copy when this page lives in the repo or on the live site, otherwise the hosted copy
+    // (a downloaded folder opened by double-click, or the p5 web editor). Both scripts finish before p5 calls setup().
+    (function () {
+      var local = "../../../midi-helpers/p5/midi-helpers.js";
+      var hosted = "https://pcd2026.mand.is/midi-helpers/p5/midi-helpers.js";
+      var s = document.createElement("script");
+      s.src = local;
+      s.onerror = function () { var h = document.createElement("script"); h.src = hosted; document.head.appendChild(h); };
+      document.head.appendChild(s);
+    })();
+  </script>
+  <script src="sketch.js"></script>
+</head>
+<body></body>
+</html>

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Launchpad Marquee</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; padding: 1.25rem; background: #14161a; color: #e8e8e8; font-family: system-ui, sans-serif; }
+    h1 { margin: 0 0 .25rem; font-size: 1.4rem; }
+    .muted { color: #9aa0a6; }
+    .layout { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(300px, 420px); gap: 1.25rem; align-items: start; margin-top: 1rem; }
+    @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+    canvas { display: block; border-radius: .5rem; max-width: 100%; }
+    .panel { background: #1b1e24; border: 1px solid #333; border-radius: .75rem; padding: 1rem; margin-bottom: 1rem; }
+    .panel h2 { margin: 0 0 .6rem; font-size: .85rem; text-transform: uppercase; letter-spacing: .08em; color: #9aa0a6; }
+    textarea, select, input[type=number], button { font: inherit; padding: .4rem .6rem; border-radius: .5rem; border: 1px solid #444; background: #22252b; color: inherit; }
+    textarea { width: 100%; box-sizing: border-box; min-height: 4.5rem; resize: vertical; }
+    button { cursor: pointer; }
+    button.primary { background: #3d7bff; border-color: #3d7bff; color: white; }
+    .row { display: grid; grid-template-columns: 7rem 1fr 3rem; align-items: center; gap: .5rem; margin: .35rem 0; font-size: .9rem; }
+    .row output { text-align: right; color: #9aa0a6; font-family: ui-monospace, monospace; }
+    .row input[type=range] { width: 100%; }
+    .actions { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin: .5rem 0; }
+    .modes { display: flex; gap: .5rem; }
+    .modes label { flex: 1; padding: .5rem; border: 1px solid #444; border-radius: .5rem; cursor: pointer; text-align: center; }
+    .modes input { display: none; }
+    .modes label:has(input:checked) { background: #3d7bff; border-color: #3d7bff; color: white; }
+    #html-out { font-family: ui-monospace, monospace; font-size: .8rem; white-space: pre-wrap; word-break: break-all; background: #111; padding: .6rem; border-radius: .5rem; }
+    #html-live { background: #000; border-radius: .5rem; padding: .5rem; overflow: hidden; }
+    .stock-only, .custom-only { display: contents; }
+    body[data-mode=stock] .custom-only, body[data-mode=custom] .stock-only { display: none; }
+  </style>
+  <script src="../launchpad-chess/vendor/p5.min.js"></script>
+</head>
+<body data-mode="custom">
+  <h1>Launchpad Marquee</h1>
+  <div class="muted" id="status">Connecting to the Launchpad…</div>
+
+  <div class="layout">
+    <div>
+      <div id="sketch"></div>
+      <div class="panel" style="margin-top:1rem">
+        <h2>Export as HTML, circa 2002</h2>
+        <div id="html-out"></div>
+        <div class="actions"><button id="copy-html">Copy</button><span class="muted">Below: the real thing, rendered by your browser today.</span></div>
+        <div id="html-live"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <h2>Text</h2>
+        <textarea id="text">Hello Processing Day!</textarea>
+        <div class="modes" style="margin-top:.6rem">
+          <label><input type="radio" name="mode" value="custom" checked> custom (we draw every pixel)</label>
+          <label><input type="radio" name="mode" value="stock"> stock (Launchpad's own scroll)</label>
+        </div>
+        <div class="actions" style="margin-top:.6rem">
+          <button id="play" class="primary">Play</button>
+          <button id="stop">Stop</button>
+          <button id="restart">Restart</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Marquee attributes</h2>
+        <div class="row"><label>direction</label><select id="direction"><option value="left">left</option><option value="right">right</option><option class="custom-only" value="up">up</option><option class="custom-only" value="down">down</option></select><span></span></div>
+        <div class="custom-only">
+          <div class="row"><label>behavior</label><select id="behavior"><option value="scroll">scroll</option><option value="slide">slide</option><option value="alternate">alternate</option></select><span></span></div>
+          <div class="row"><label>scrollamount</label><input type="range" id="scrollamount" min="1" max="7" value="1"><output>1</output></div>
+          <div class="row"><label>scrolldelay</label><input type="range" id="scrolldelay" min="20" max="500" step="10" value="90"><output>90</output></div>
+          <div class="row"><label>loop</label><input type="range" id="loop" min="0" max="10" value="0"><output>∞</output></div>
+        </div>
+        <div class="stock-only">
+          <div class="row"><label>speed</label><input type="range" id="speed" min="1" max="30" value="7"><output>7</output></div>
+          <div class="row"><label>loop</label><select id="stock-loop"><option value="1">forever</option><option value="0">once</option></select><span></span></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Colour</h2>
+        <div class="row"><label>color</label><input type="color" id="color" value="#ff4bd8"><span></span></div>
+        <div class="custom-only">
+          <div class="row"><label>colour mode</label><select id="colormode"><option value="solid">solid</option><option value="rainbow">rainbow across text</option><option value="letters">per letter</option><option value="cycle">cycle over time</option></select><span></span></div>
+          <div class="row"><label>bgcolor</label><input type="color" id="bgcolor" value="#000000"><span></span></div>
+          <div class="row"><label>blink</label><input type="range" id="blink" min="0" max="10" value="0"><output>off</output></div>
+          <div class="row"><label>trail</label><input type="range" id="trail" min="0" max="0.9" step="0.1" value="0"><output>0</output></div>
+        </div>
+      </div>
+
+      <div class="panel custom-only">
+        <h2>On the Launchpad</h2>
+        <div class="muted" style="font-size:.85rem;line-height:1.5">
+          Arrow buttons set the direction. The right column is a speed fader: press higher for faster. The bottom-right button (Stop Solo Mute) pauses and resumes, green while playing and orange while paused; in stock mode it starts and stops the hardware scroll. The logo restarts.<br>
+          This is the seed for using the board as more than a display.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="sketch.js"></script>
+</body>
+</html>

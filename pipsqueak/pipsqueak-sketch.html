@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PipSqueak Kaleidoscope</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-family: ui-monospace, monospace; }
+    canvas { display: block; }
+    #hud { position: fixed; left: 1rem; bottom: 1rem; font-size: 13px; line-height: 1.5; color: #9aa0a6; pointer-events: none; white-space: pre; }
+    #panel {
+      position: fixed; top: 1rem; right: 1rem; width: min(22rem, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); overflow: auto;
+      background: rgba(16, 18, 22, .92); color: #e8e8e8; border: 1px solid #333; border-radius: .75rem; padding: 1rem;
+      font-size: 13px; display: grid; gap: .5rem; backdrop-filter: blur(6px);
+    }
+    #panel h2 { margin: 0 0 .25rem; font-size: 14px; display: flex; justify-content: space-between; }
+    #panel h2 span { color: #9aa0a6; font-weight: normal; }
+    #panel h3 { margin: .5rem 0 0; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #9aa0a6; }
+    #panel label { display: grid; grid-template-columns: 6.5rem 1fr 3.5rem; align-items: center; gap: .5rem; }
+    #panel output { text-align: right; color: #9aa0a6; }
+    #panel input[type=range] { width: 100%; margin: 0; }
+    #panel select, #panel button { font: inherit; background: #22252b; color: inherit; border: 1px solid #444; border-radius: .4rem; padding: .3rem .5rem; }
+    #panel select { grid-column: 2 / 4; }
+    #panel button { margin-top: .5rem; cursor: pointer; }
+    #panel .hint { color: #9aa0a6; font-size: 12px; margin: 0; }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.11.3/p5.min.js"></script>
+</head>
+<body>
+  <div id="hud"></div>
+
+  <form id="panel" hidden>
+    <h2>Settings <span>esc closes</span></h2>
+
+    <h3>Symmetry</h3>
+    <label>style <select data-key="symmetry"><option value="panes">panes (mirror tiling)</option><option value="radial">radial (kaleidoscope)</option></select></label>
+    <label>level <input type="range" data-key="level" min="0" max="4" step="1"><output></output></label>
+    <p class="hint">The stick button steps the level and clears when it wraps.</p>
+
+    <h3>Tool</h3>
+    <label>tool <select data-key="tool"><option value="draw">draw</option><option value="move">move the canvas</option></select></label>
+    <label>move <select data-key="move"><option value="spin">rotate (x) + zoom (y)</option><option value="pan">pan</option></select></label>
+    <label>rotate speed <input type="range" data-key="rotateSpeed" min="0.2" max="5" step="0.1"><output></output></label>
+    <label>zoom speed <input type="range" data-key="zoomSpeed" min="0.2" max="5" step="0.1"><output></output></label>
+    <label>pan speed <input type="range" data-key="panSpeed" min="1" max="30" step="1"><output></output></label>
+    <p class="hint">In move mode the stick button swaps rotate/zoom and pan.</p>
+
+    <h3>Pen</h3>
+    <label>motion <select data-key="pen"><option value="spring">spring (returns home)</option><option value="steer">steer (velocity)</option></select></label>
+    <label>reach <input type="range" data-key="reach" min="0.3" max="1.2" step="0.05"><output></output></label>
+    <label>spring <input type="range" data-key="spring" min="0.01" max="0.3" step="0.01"><output></output></label>
+    <label>damping <input type="range" data-key="damping" min="0.5" max="0.98" step="0.01"><output></output></label>
+    <label>steer speed <input type="range" data-key="speed" min="2" max="30" step="1"><output></output></label>
+
+    <h3>Paint</h3>
+    <label>blob size <input type="range" data-key="blob" min="0.3" max="3" step="0.1"><output></output></label>
+    <label>intensity <input type="range" data-key="paint" min="0.2" max="4" step="0.1"><output></output></label>
+    <label>hue <select data-key="hue"><option value="direction">follows direction</option><option value="cycle">cycles over time</option><option value="fixed">fixed</option></select></label>
+    <label>fixed hue <input type="range" data-key="fixedHue" min="0" max="359" step="1"><output></output></label>
+    <label>fade <input type="checkbox" data-key="fade"><output></output></label>
+    <label>fade every <input type="range" data-key="fadeEvery" min="1" max="12" step="1"><output></output></label>
+
+    <h3>Display</h3>
+    <label>readout <input type="checkbox" data-key="hud"><output></output></label>
+    <button type="button" id="save">Save image (d)</button>
+    <button type="button" id="clear">Clear canvas</button>
+  </form>
+
+  <script type="module">
+    import { PipSqueak } from "./pipsqueak.js";
+
+    // ---- Settings (everything the panel edits) ----
+    const S = {
+      symmetry: "panes",   // "panes": mirror tiling, each pane has its own centre. "radial": kaleidoscope folds.
+      level: 0,            // index into LEVELS
+      tool: "draw",        // "draw": the stick paints. "move": the stick rotates/zooms/pans the whole canvas (feedback style).
+      move: "spin",        // move tool: "spin" = x rotates, y zooms. "pan" = x/y pan.
+      rotateSpeed: 1,      // degrees per frame at full deflection
+      zoomSpeed: 1,        // percent per frame at full deflection
+      panSpeed: 8,         // px per frame at full deflection
+      pen: "spring",       // "spring": pen sits where the stick is and springs home. "steer": stick sets velocity.
+      reach: 0.9,          // spring: full deflection reaches this fraction of the half-pane
+      spring: 0.05,        // spring: pull toward the stick position
+      damping: 0.86,       // spring: how quickly it settles (lower = bouncier)
+      speed: 9,            // steer: px per frame at full deflection
+      blob: 1,             // blob size multiplier
+      paint: 1,            // paint intensity multiplier
+      hue: "direction",    // "direction" | "cycle" | "fixed"
+      fixedHue: 200,
+      fade: true,
+      fadeEvery: 2,        // frames between fade passes; browsers floor 8-bit colour, so each pass removes ~1 level regardless of alpha
+      hud: true,
+    };
+    const LEVELS = [
+      { folds: 1,  panes: [1, 1] },
+      { folds: 2,  panes: [2, 1] },
+      { folds: 4,  panes: [2, 2] },
+      { folds: 8,  panes: [4, 2] },
+      { folds: 16, panes: [4, 4] },
+    ];
+    const LONG_PRESS_MS = 600;
+    const FADE_DECAY = 0.004;
+    const FADE_FLOOR_EVERY = 10;
+
+    const hud = document.getElementById("hud");
+    const panel = document.getElementById("panel");
+    const api = {}; // filled by the sketch: clear(), save()
+
+    // ---- Panel binding ----
+    const controls = [...panel.querySelectorAll("[data-key]")];
+    const levelLabel = () => S.symmetry === "radial"
+      ? `${LEVELS[S.level].folds} fold${LEVELS[S.level].folds > 1 ? "s" : ""}`
+      : `${LEVELS[S.level].panes[0]}×${LEVELS[S.level].panes[1]}`;
+    function sync() {
+      for (const el of controls) {
+        const k = el.dataset.key, v = S[k];
+        if (el.type === "checkbox") el.checked = v; else el.value = v;
+        const out = el.parentElement.querySelector("output");
+        if (out) out.textContent = k === "level" ? levelLabel() : typeof v === "boolean" ? (v ? "on" : "off") : v;
+      }
+      hud.hidden = !S.hud;
+    }
+    for (const el of controls) {
+      el.addEventListener("input", () => {
+        const k = el.dataset.key;
+        S[k] = el.type === "checkbox" ? el.checked : el.tagName === "SELECT" ? el.value : +el.value;
+        sync();
+      });
+    }
+    document.getElementById("clear").addEventListener("click", () => api.clear?.());
+    document.getElementById("save").addEventListener("click", () => api.save?.());
+    function togglePanel(show = panel.hidden) {
+      panel.hidden = !show;
+      if (!show) document.activeElement?.blur();
+    }
+    sync();
+
+    // ---- Stick ----
+    let stick = null, stickStatus = "connecting…";
+    try {
+      stick = await PipSqueak.connect({ smoothing: 0.5 });
+      stickStatus = `stick: ${stick.input.name}`;
+    } catch (e) {
+      stickStatus = `no stick (${e.message}) — use arrows + space`;
+    }
+
+    // ---- Sketch ----
+    new p5((p) => {
+      let cursor, velocity, hue = S.fixedHue;
+      let buf; // offscreen copy of the canvas for the move tool
+      let noiseSeedX = 0, noiseSeedY = 1000;
+      let pressTimer = null, longPressed = false, pulse = 0;
+      const keys = new Set();
+
+      const clear = () => { p.blendMode(p.BLEND); p.background(0); };
+      api.clear = clear;
+      api.save = () => p.saveCanvas(`pipsqueak-${new Date().toISOString().replace(/[:.]/g, "-")}`, "png");
+
+      p.setup = () => {
+        p.createCanvas(p.windowWidth, p.windowHeight);
+        p.colorMode(p.HSB, 360, 100, 100, 1);
+        p.noStroke();
+        cursor = p.createVector(p.width / 2, p.height / 2);
+        velocity = p.createVector(0, 0);
+        buf = p.createGraphics(p.width, p.height);
+        clear();
+        if (stick) { stick.on("press", onPress); stick.on("release", onRelease); }
+      };
+
+      p.windowResized = () => { p.resizeCanvas(p.windowWidth, p.windowHeight); buf = p.createGraphics(p.width, p.height); clear(); };
+
+      // Move tool: copy the canvas, then draw it back transformed. Holding the stick compounds the
+      // transform frame after frame, which is what makes spirals and tunnels out of whatever is painted.
+      function moveCanvas(input) {
+        if (input.magnitude === 0) return;
+        const cx = p.width / 2, cy = p.height / 2;
+        buf.drawingContext.clearRect(0, 0, p.width, p.height);
+        buf.drawingContext.drawImage(p.canvas, 0, 0, p.width, p.height);
+        p.blendMode(p.BLEND);
+        p.background(0);
+        p.push();
+        if (S.move === "pan") {
+          p.translate(input.x * S.panSpeed, input.y * S.panSpeed);
+        } else {
+          p.translate(cx, cy);
+          p.rotate(p.radians(input.x * S.rotateSpeed));
+          p.scale(1 - input.y * S.zoomSpeed * 0.01); // stick up (screen -y) zooms in
+          p.translate(-cx, -cy);
+        }
+        p.image(buf, 0, 0);
+        p.pop();
+      }
+
+      function onPress() {
+        longPressed = false;
+        pulse = 1;
+        pressTimer = setTimeout(() => { longPressed = true; clear(); }, LONG_PRESS_MS);
+      }
+      function onRelease() {
+        clearTimeout(pressTimer);
+        if (longPressed) return;
+        if (S.tool === "move") { S.move = S.move === "spin" ? "pan" : "spin"; sync(); return; }
+        S.level = (S.level + 1) % LEVELS.length;
+        if (S.level === 0) clear();
+        sync();
+      }
+
+      // Read codes off the event: p5's keyCode property is not refreshed on release,
+      // so releasing two held keys would otherwise remove the wrong one.
+      p.keyPressed = (e) => {
+        if (e.key === "Escape") { togglePanel(); return false; }
+        if (panel.contains(document.activeElement) && document.activeElement !== panel) return; // a control has focus
+        if (e.key === " ") { onPress(); return false; }
+        if (e.key === "c") clear();
+        if (e.key === "d") api.save();
+        if (e.key === "f") { S.fade = !S.fade; sync(); }
+        if (e.key === "h") { S.hud = !S.hud; sync(); }
+        if (e.key === "m") { S.pen = S.pen === "spring" ? "steer" : "spring"; sync(); }
+        if (e.key === "t") { S.tool = S.tool === "draw" ? "move" : "draw"; sync(); }
+        if (e.key === "s") { S.symmetry = S.symmetry === "panes" ? "radial" : "panes"; sync(); }
+        keys.add(e.keyCode);
+      };
+      p.keyReleased = (e) => {
+        if (e.key === " ") onRelease();
+        keys.delete(e.keyCode);
+      };
+
+      // Input vector: the stick when it is deflected, otherwise the arrow keys.
+      function inputVector() {
+        if (stick && stick.state.magnitude > 0) {
+          const s = stick.state;
+          return { x: s.x, y: -s.y, magnitude: s.magnitude, angle: s.angle };
+        }
+        let x = 0, y = 0;
+        if (keys.has(p.LEFT_ARROW)) x -= 1;
+        if (keys.has(p.RIGHT_ARROW)) x += 1;
+        if (keys.has(p.UP_ARROW)) y -= 1;
+        if (keys.has(p.DOWN_ARROW)) y += 1;
+        const m = Math.min(1, Math.hypot(x, y));
+        if (m === 0) return { x: 0, y: 0, magnitude: 0, angle: null };
+        return { x: x / m, y: y / m, magnitude: m, angle: Math.atan2(-y, x) };
+      }
+
+      function blob(x, y, r, t) {
+        p.beginShape();
+        const steps = 40;
+        for (let i = 0; i < steps; i++) {
+          const a = (i / steps) * p.TWO_PI;
+          const n = p.noise(noiseSeedX + Math.cos(a) * 1.2, noiseSeedY + Math.sin(a) * 1.2, t);
+          const rr = r * (0.55 + n * 0.9);
+          p.vertex(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+        }
+        p.endShape(p.CLOSE);
+      }
+
+      // Draw one blob at an offset (ox, oy) from the screen centre, replicated by the current symmetry.
+      function stamp(ox, oy, size, t) {
+        const cx = p.width / 2, cy = p.height / 2;
+        const lvl = LEVELS[S.level];
+        if (S.symmetry === "radial") {
+          for (let i = 0; i < lvl.folds; i++) {
+            p.push();
+            p.translate(cx, cy);
+            p.rotate((i / lvl.folds) * p.TWO_PI);
+            blob(ox, oy, size, t);
+            if (lvl.folds > 1) { p.scale(1, -1); blob(ox, oy, size, t + 7); }
+            p.pop();
+          }
+        } else {
+          // Each pane is a scaled copy with its own centre; odd columns flip x, odd rows flip y,
+          // so neighbouring panes are mirror images and strokes meet at the seams.
+          const [cols, rows] = lvl.panes;
+          const pw = p.width / cols, ph = p.height / rows;
+          const kx = 1 / cols, ky = 1 / rows, ks = Math.sqrt(kx * ky);
+          for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+              const mx = c % 2 ? -1 : 1, my = r % 2 ? -1 : 1;
+              blob((c + 0.5) * pw + ox * kx * mx, (r + 0.5) * ph + oy * ky * my, size * ks, t + c * 3 + r * 5);
+            }
+          }
+        }
+      }
+
+      p.draw = () => {
+        const t = p.frameCount * 0.02;
+        const input = inputVector();
+        const cx = p.width / 2, cy = p.height / 2;
+
+        if (S.tool === "move") {
+          moveCanvas(input);
+          if (S.fade) fadePass();
+          if (S.hud) drawHud();
+          pulse *= 0.9;
+          return;
+        }
+
+        const prevX = cursor.x, prevY = cursor.y;
+        let painting, size, strength, hueAngle;
+
+        if (S.pen === "spring") {
+          // The pen is tethered to the stick: full deflection reaches the edge, letting go springs it home.
+          const reach = Math.min(cx, cy) * S.reach;
+          const tx = cx + input.x * reach, ty = cy + input.y * reach;
+          velocity.x = (velocity.x + (tx - cursor.x) * S.spring) * S.damping;
+          velocity.y = (velocity.y + (ty - cursor.y) * S.spring) * S.damping;
+          cursor.add(velocity);
+          const dx = cursor.x - cx, dy = cursor.y - cy;
+          strength = Math.min(1, Math.hypot(dx, dy) / reach);
+          hueAngle = strength > 0.02 ? Math.atan2(-dy, dx) : null;
+          painting = Math.hypot(cursor.x - prevX, cursor.y - prevY) > 0.4 || pulse > 0.05;
+          size = 14 + strength * 46 + pulse * 40;
+        } else {
+          cursor.x = p.constrain(cursor.x + input.x * S.speed, 0, p.width);
+          cursor.y = p.constrain(cursor.y + input.y * S.speed, 0, p.height);
+          strength = input.magnitude;
+          hueAngle = input.angle;
+          painting = input.magnitude > 0 || pulse > 0.05;
+          size = 18 + strength * 42 + pulse * 40;
+        }
+        size *= S.blob;
+
+        if (S.hue === "direction" && hueAngle != null) {
+          const target = (p.degrees(hueAngle) + 360) % 360;
+          const d = ((target - hue + 540) % 360) - 180;
+          hue = (hue + d * 0.05 + 360) % 360;
+        } else if (S.hue === "cycle") {
+          hue = (hue + 0.25) % 360;
+        } else if (S.hue === "fixed") {
+          hue = S.fixedHue;
+        }
+
+        // Fade in normal blend, paint in additive blend so overlapping hues glow rather than muddy.
+        if (S.fade) fadePass();
+        p.blendMode(p.ADD);
+
+        if (painting) {
+          // Radial copies overlap at the centre and saturate fast, so their alpha is scaled down. Panes don't overlap.
+          const lvl = LEVELS[S.level];
+          const overlap = S.symmetry === "radial" && lvl.folds > 1 ? Math.sqrt(lvl.folds * 2) : 1;
+          const alpha = ((0.012 + strength * 0.02) * S.paint) / overlap;
+          // Stamp blobs along this frame's travel so fast strokes are as dense as slow ones.
+          const travel = Math.hypot(cursor.x - prevX, cursor.y - prevY);
+          const stamps = Math.max(1, Math.min(12, Math.ceil(travel / (size * 0.3))));
+          p.fill(hue, 85, 90, alpha);
+          for (let i = 1; i <= stamps; i++) {
+            const f = i / stamps;
+            stamp(prevX + (cursor.x - prevX) * f - cx, prevY + (cursor.y - prevY) * f - cy, size, t + f);
+          }
+        }
+        pulse *= 0.9;
+
+        if (S.hud) drawHud();
+      };
+
+      function fadePass() {
+        if (p.frameCount % S.fadeEvery === 0) {
+          p.blendMode(p.BLEND);
+          p.fill(0, 0, 0, FADE_DECAY);
+          p.rect(0, 0, p.width, p.height);
+        }
+        // Insurance for browsers that round instead of floor: subtract one level so black is reached.
+        if (p.frameCount % FADE_FLOOR_EVERY === 0) {
+          p.blendMode(p.DIFFERENCE);
+          p.fill(0, 0, 0.4); // ≈ rgb(1,1,1)
+          p.rect(0, 0, p.width, p.height);
+          p.rect(0, 0, p.width, p.height); // twice: 0 stays 0 instead of flickering to 1
+        }
+      }
+
+      function drawHud() {
+        const toolText = S.tool === "move" ? `move: ${S.move === "spin" ? "rotate + zoom" : "pan"}` : `pen ${S.pen}`;
+        hud.textContent =
+          `${stickStatus}\n` +
+          `tool ${S.tool}   ${S.symmetry} ${levelLabel()}   ${toolText}   hue ${hue.toFixed(0)}°   fade ${S.fade ? "on" : "off"}\n` +
+          `button/space: ${S.tool === "move" ? "rotate/pan" : "next level"} · hold: clear · esc: settings · t: tool · s: symmetry · m: pen · c: clear · d: save image · f: fade · h: hide this`;
+      }
+    });
+  </script>
+</body>
+</html>

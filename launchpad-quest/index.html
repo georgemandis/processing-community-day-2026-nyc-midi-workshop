@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Launchpad Quest</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; padding: 1.25rem; background: #14161a; color: #e8e8e8; font-family: system-ui, sans-serif; }
+    h1 { margin: 0 0 .25rem; font-size: 1.4rem; }
+    .muted { color: #9aa0a6; }
+    canvas { display: block; border-radius: .5rem; max-width: 100%; }
+    .legend { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: .3rem 1rem; font-size: .85rem; margin-top: 1rem; max-width: 1100px; }
+    .legend span { display: inline-block; width: 1.1rem; height: 1.1rem; border-radius: 4px; vertical-align: middle; margin-right: .4rem; }
+  </style>
+  <script src="../launchpad-chess/vendor/p5.min.js"></script>
+</head>
+<body>
+  <h1>Launchpad Quest</h1>
+  <div class="muted" id="status">Connecting…</div>
+  <div id="sketch" style="margin-top:1rem"></div>
+  <div class="legend" id="legend"></div>
+  <script type="module" src="sketch.js"></script>
+</body>
+</html>

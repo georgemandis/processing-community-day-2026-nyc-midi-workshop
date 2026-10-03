@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PipSqueak Recorder</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; padding: 1.5rem; font-family: system-ui, sans-serif; background: #14161a; color: #e8e8e8; }
+    h1 { margin: 0 0 .25rem; font-size: 1.5rem; }
+    .muted { color: #9aa0a6; }
+    header { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+    select, button { font: inherit; padding: .5rem .9rem; border-radius: .5rem; border: 1px solid #444; background: #22252b; color: inherit; }
+    button.primary { background: #3d7bff; border-color: #3d7bff; color: white; }
+    button:disabled { opacity: .4; }
+    #step { text-align: center; padding: 2.5rem 1rem; border: 3px solid #444; border-radius: 1rem; margin-bottom: 1rem; background: #1b1e24; }
+    #step-name { font-size: 3.5rem; font-weight: 800; margin: 0; letter-spacing: -.02em; }
+    #step-instruction { font-size: 1.4rem; margin: .5rem 0 1rem; }
+    #step-hint { font-size: 1.1rem; color: #ffd166; }
+    #step-progress { font-size: .95rem; color: #9aa0a6; }
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    @media (max-width: 800px) { .cols { grid-template-columns: 1fr; } #step-name { font-size: 2.2rem; } }
+    .panel { background: #1b1e24; border: 1px solid #333; border-radius: .75rem; padding: 1rem; min-height: 8rem; }
+    .panel h2 { margin: 0 0 .5rem; font-size: 1rem; text-transform: uppercase; letter-spacing: .08em; color: #9aa0a6; }
+    table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+    th, td { text-align: right; padding: .25rem .4rem; border-bottom: 1px solid #2a2d33; }
+    th:first-child, td:first-child { text-align: left; font-family: ui-monospace, monospace; }
+    .bar { height: 6px; background: #2a2d33; border-radius: 3px; position: relative; }
+    .bar i { position: absolute; top: -2px; width: 4px; height: 10px; background: #3d7bff; border-radius: 2px; margin-left: -2px; }
+    pre { margin: 0; font-size: .8rem; line-height: 1.3; max-height: 22rem; overflow: auto; white-space: pre; }
+    #log { color: #b8bec5; }
+    #result pre { max-height: 60vh; }
+    .actions { display: flex; gap: .5rem; flex-wrap: wrap; margin: .75rem 0; }
+    label.check { display: inline-flex; gap: .4rem; align-items: center; }
+    .rate { font-family: ui-monospace, monospace; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>PipSqueak Recorder</h1>
+      <div class="muted" id="status">Requesting MIDI access…</div>
+    </div>
+    <div class="actions">
+      <select id="inputs"></select>
+      <label class="check"><input type="checkbox" id="speak" checked> speak steps</label>
+      <button id="start" class="primary" disabled>Start session</button>
+      <button id="skip" disabled>Skip step (space)</button>
+      <button id="reset" disabled>Reset</button>
+    </div>
+  </header>
+
+  <section id="step">
+    <p id="step-progress">Explore mode</p>
+    <h2 id="step-name">Wiggle it</h2>
+    <p id="step-instruction">Move the joystick and press the button to see what it sends. Press <b>Start session</b> when ready.</p>
+    <p id="step-hint"></p>
+  </section>
+
+  <div class="cols">
+    <div class="panel">
+      <h2>Live <span class="rate" id="rate">0 msg/s</span></h2>
+      <table id="live"><thead><tr><th>key</th><th>now</th><th>min</th><th>max</th><th>count</th><th style="width:30%"></th></tr></thead><tbody></tbody></table>
+    </div>
+    <div class="panel">
+      <h2>Raw (latest first)</h2>
+      <pre id="log"></pre>
+    </div>
+  </div>
+
+  <div class="panel" id="result" hidden style="margin-top:1rem">
+    <h2>Analysis</h2>
+    <div class="actions">
+      <button id="download" class="primary">Download session JSON</button>
+      <button id="copy">Copy summary</button>
+    </div>
+    <pre id="summary"></pre>
+  </div>
+
+  <script type="module">
+    import { decode, analyzeSession } from "./pipsqueak-analyze.js";
+
+    const STEPS = [
+      { id: "learn", name: "Press the button", instruction: "Press the joystick button once so I can learn which message it sends.", hint: "Each later press moves to the next step." },
+      { id: "rest1", name: "Hands off", instruction: "Leave the joystick alone for a few seconds so I can measure the noise floor.", hint: "Then press the button." },
+      { id: "cw", name: "Spin clockwise", instruction: "Roll the stick around its full edge clockwise a few times.", hint: "Then press the button." },
+      { id: "ccw", name: "Spin counter-clockwise", instruction: "Now roll it counter-clockwise a few times.", hint: "Then press the button." },
+      { id: "left", name: "Full left", instruction: "Push all the way left and hold for a second.", hint: "Then let go and press the button." },
+      { id: "right", name: "Full right", instruction: "Push all the way right and hold for a second.", hint: "Then let go and press the button." },
+      { id: "up", name: "Full up", instruction: "Push all the way up (away from you) and hold.", hint: "Then let go and press the button." },
+      { id: "down", name: "Full down", instruction: "Push all the way down (toward you) and hold.", hint: "Then let go and press the button." },
+      { id: "rest2", name: "Hands off again", instruction: "Leave it alone for a few seconds.", hint: "Then press the button to finish." },
+    ];
+
+    const $ = (id) => document.getElementById(id);
+    const el = { status: $("status"), inputs: $("inputs"), start: $("start"), skip: $("skip"), reset: $("reset"), speak: $("speak"),
+      progress: $("step-progress"), name: $("step-name"), instruction: $("step-instruction"), hint: $("step-hint"),
+      live: $("live").querySelector("tbody"), log: $("log"), rate: $("rate"), result: $("result"), summary: $("summary"), download: $("download"), copy: $("copy") };
+
+    let midi = null, activeInput = null;
+    let session = null;          // null while exploring
+    let stepIndex = -1;
+    let t0 = 0;
+    let lastPressAt = -Infinity;
+    const liveStats = new Map();  // key -> {now, min, max, count}
+    const lastValue = new Map();  // key -> last value, for edge detection
+    const rateWindow = [];
+    const logLines = [];
+
+    // ---- MIDI setup ----
+    function pickInput(id) {
+      if (activeInput) activeInput.onmidimessage = null;
+      activeInput = midi.inputs.get(id) || null;
+      if (activeInput) {
+        activeInput.onmidimessage = onMessage;
+        el.status.textContent = `Listening to ${activeInput.name}`;
+      } else {
+        el.status.textContent = "No MIDI input selected";
+      }
+    }
+    function refreshInputs() {
+      const inputs = [...midi.inputs.values()];
+      el.inputs.innerHTML = "";
+      for (const i of inputs) {
+        const o = document.createElement("option");
+        o.value = i.id; o.textContent = i.name; el.inputs.append(o);
+      }
+      const preferred = inputs.find((i) => /pip|squeak|usemidi|midibaby/i.test(i.name)) || inputs[0];
+      if (preferred) { el.inputs.value = preferred.id; pickInput(preferred.id); }
+      else el.status.textContent = "No MIDI inputs found. Plug in the PipSqueak.";
+      el.start.disabled = !preferred;
+    }
+    el.inputs.addEventListener("change", () => pickInput(el.inputs.value));
+
+    try {
+      midi = await navigator.requestMIDIAccess();
+      midi.onstatechange = refreshInputs;
+      refreshInputs();
+    } catch (e) {
+      el.status.textContent = `Could not get MIDI access: ${e.message}. Web MIDI needs Chrome on https:// or localhost.`;
+    }
+
+    // ---- Message handling ----
+    function onMessage(ev) {
+      const data = [...ev.data];
+      const now = performance.now();
+      const d = decode(data);
+
+      if (session) session.messages.push({ t: +(now - t0).toFixed(1), step: currentStep()?.id ?? null, data });
+
+      // live table
+      if (d) {
+        const s = liveStats.get(d.key) || { now: 0, min: Infinity, max: -Infinity, count: 0, type: d.type };
+        s.now = d.value; s.min = Math.min(s.min, d.value); s.max = Math.max(s.max, d.value); s.count++;
+        liveStats.set(d.key, s);
+      }
+      rateWindow.push(now);
+      logLines.unshift(`${(now - t0).toFixed(0).padStart(7)}  ${data.map((b) => b.toString(16).padStart(2, "0")).join(" ")}  ${d ? `${d.key}=${d.value}` : "?"}`);
+      if (logLines.length > 40) logLines.length = 40;
+      scheduleRender();
+
+      // Button press advances the step. The button may be a note or a CC that
+      // jumps to 127 on press and 0 on release, so we look for a rising edge
+      // (value crosses 64 upward) on whichever key was learned in step 1.
+      if (session && d) {
+        const prev = lastValue.get(d.key);
+        lastValue.set(d.key, d.value);
+        const rising = d.type === "note" ? d.on : (prev === undefined || prev < 64) && d.value >= 64;
+        if (!rising) return;
+        if (currentStep()?.id === "learn" && !session.button && (d.type === "note" || d.value === 127)) {
+          session.button = { key: d.key };
+        }
+        if (session.button?.key === d.key && now - lastPressAt > 400) { lastPressAt = now; advance(); }
+      }
+    }
+
+    let renderQueued = false;
+    function scheduleRender() {
+      if (renderQueued) return;
+      renderQueued = true;
+      requestAnimationFrame(() => { renderQueued = false; render(); });
+    }
+    function render() {
+      const rows = [...liveStats.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+      el.live.innerHTML = rows.map(([key, s]) => {
+        const max = s.type === "pb" ? 16383 : 127;
+        return `<tr><td>${key}</td><td>${s.now}</td><td>${s.min}</td><td>${s.max}</td><td>${s.count}</td><td><div class="bar"><i style="left:${(s.now / max) * 100}%"></i></div></td></tr>`;
+      }).join("");
+      el.log.textContent = logLines.join("\n");
+      const cutoff = performance.now() - 1000;
+      while (rateWindow.length && rateWindow[0] < cutoff) rateWindow.shift();
+      el.rate.textContent = `${rateWindow.length} msg/s`;
+    }
+    setInterval(render, 500);
+
+    // ---- Session flow ----
+    const currentStep = () => (stepIndex >= 0 && stepIndex < STEPS.length ? STEPS[stepIndex] : null);
+
+    function speak(text) {
+      if (!el.speak.checked || !("speechSynthesis" in window)) return;
+      speechSynthesis.cancel();
+      speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+    }
+
+    function showStep() {
+      const s = currentStep();
+      if (!s) return;
+      el.progress.textContent = `Step ${stepIndex + 1} of ${STEPS.length}`;
+      el.name.textContent = s.name;
+      el.instruction.textContent = s.instruction;
+      el.hint.textContent = s.hint ?? "";
+      speak(s.name);
+    }
+
+    function startSession() {
+      session = { device: activeInput?.name ?? null, recordedAt: new Date().toISOString(), button: null, steps: [], messages: [] };
+      t0 = performance.now();
+      stepIndex = -1;
+      el.result.hidden = true;
+      el.start.disabled = true; el.skip.disabled = false; el.reset.disabled = false;
+      advance();
+    }
+
+    function advance() {
+      const now = +(performance.now() - t0).toFixed(1);
+      if (currentStep()) session.steps[session.steps.length - 1].endedAt = now;
+      stepIndex++;
+      if (stepIndex >= STEPS.length) return finish();
+      session.steps.push({ id: STEPS[stepIndex].id, name: STEPS[stepIndex].name, startedAt: now, endedAt: null });
+      showStep();
+    }
+
+    function finish() {
+      el.progress.textContent = "Done";
+      el.name.textContent = "Recorded";
+      el.instruction.textContent = `${session.messages.length} messages across ${session.steps.length} steps. Download the JSON and hand it to the analyzer.`;
+      el.hint.textContent = "";
+      speak("Done");
+      el.skip.disabled = true;
+      const result = analyzeSession(session);
+      el.summary.textContent = result.text;
+      el.result.hidden = false;
+      el.result.scrollIntoView({ behavior: "smooth" });
+      stepIndex = STEPS.length; // keep recording nothing further
+      session.finishedAt = new Date().toISOString();
+    }
+
+    function resetAll() {
+      session = null; stepIndex = -1;
+      liveStats.clear(); lastValue.clear(); logLines.length = 0;
+      el.progress.textContent = "Explore mode";
+      el.name.textContent = "Wiggle it";
+      el.instruction.textContent = "Move the joystick and press the button to see what it sends. Press Start session when ready.";
+      el.hint.textContent = "";
+      el.result.hidden = true;
+      el.start.disabled = !activeInput; el.skip.disabled = true; el.reset.disabled = true;
+      render();
+    }
+
+    el.start.addEventListener("click", startSession);
+    el.skip.addEventListener("click", () => session && currentStep() && advance());
+    el.reset.addEventListener("click", resetAll);
+    document.addEventListener("keydown", (e) => {
+      if (e.code === "Space" && session && currentStep()) { e.preventDefault(); advance(); }
+    });
+
+    el.download.addEventListener("click", () => {
+      const blob = new Blob([JSON.stringify(session)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `pipsqueak-session-${session.recordedAt.replace(/[:.]/g, "-")}.json`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+    el.copy.addEventListener("click", async () => {
+      await navigator.clipboard.writeText(el.summary.textContent);
+      el.copy.textContent = "Copied"; setTimeout(() => (el.copy.textContent = "Copy summary"), 1200);
+    });
+  </script>
+</body>
+</html>

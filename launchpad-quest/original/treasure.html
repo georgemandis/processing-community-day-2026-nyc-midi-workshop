@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Novation Launchpad Draw</title>
+  <link rel="stylesheet" href="/css/universal.css" />
+  <style>
+    #novation-grid {
+      width:400px;
+      height:400px;
+/*      margin:2em auto;*/
+      display:inline-block;
+    }
+    
+    #novation-grid .button{
+      display:inline-block;
+      box-sizing:border-box;
+      background:#333;
+      width:50px;
+      height:50px;
+      float:left;
+      border:1px #000 solid;
+    }
+    
+  
+    video {
+      display:inline-block;
+      max-height:50vh;
+      height:400px;
+      height:50vh;
+      margin:0;
+      padding:0;
+      width:auto; 
+    }
+    
+  
+  </style>
+</head>
+<body>
+  <h1 class='text-center'>MIDI Launchpad Bouncy Blocks</h1>
+  <div class="container">
+  <video class="hide"></video><div id="novation-grid">
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+    <div class="button"></div>
+  </div>
+  </div>
+  <div class="text-center">
+    <br />
+    <button id="watch-board" class='green-bg'>Watch Board</button>
+  </div>
+  
+<script>
+  
+var midiInput = null,
+    midiOutput = null,
+    grid = new Array(8),
+    pieces = [];
+    
+    
+
+    for (var x = 0; x < 8; x++) {
+      grid[x] = new Array(8);
+    }
+
+        
+  
+  function midiProc(event) {
+    data = event.data;
+    // console.log(data);
+    
+    var cmd = data[0] >> 4;
+    var channel = data[0] & 0xf;
+    var noteNumber = data[1];
+    var velocity = data[2];
+
+    if ( cmd==8 || ((cmd==9)&&(velocity==0)) ) { // with MIDI, note on with velocity zero is the same as note off
+      // note off
+      //noteOff(b);
+    } else if (cmd == 9) {  // Note on
+      if (false)
+        tick();
+      else {
+        var x = noteNumber & 0x0f;
+        var y = (noteNumber & 0xf0) >> 4;
+        // flipXY( x, y );
+      }
+    } else if (cmd == 11) { // Continuous Controller message
+      switch (noteNumber) {
+      }
+    }
+    
+    var parse = (noteNumber) / 10;
+    var y = Math.abs((parseInt(parse.toString().split(".")[0]) - 1)-7);
+    var x = parseInt(parse.toString().split(".")[1]) - 1;
+        console.log(x,y)
+    var channel = noteNumber;
+    
+    if ((grid[x][y] === undefined || grid[x][y] === 0)  && data[2] == 127) {
+      
+      var piece = {
+        x: x,
+        y: y,
+        dx: Math.round(Math.random()) ? 1 : -1,
+        dy: Math.round(Math.random()) ? 1 : -1,
+        color: Math.round(Math.random()*127)
+      };
+
+      pieces.push(piece)
+      
+      midiOutput.send( [144, coordinateToMIDINote(piece.x,piece.y), piece.color] ); // Select 
+      
+      // midiOutput.send([144,data[1], 120]);
+      // grid[x][y] = 120;
+      // document.querySelector('.button:nth-of-type('+(x+(y*8)+1)+')').style.background="#f00"
+    }else if (grid[x][y] == 120 && data[2] == 127) {
+      midiOutput.send([144,data[1], 0]);
+      grid[x][y] = 0;
+      document.querySelector('.button:nth-of-type('+(x+(y*8)+1)+')').style.background="#333"
+    }
+  }
+
+
+  var onMIDIInit = function(midi){
+    // console.log(midi.inputs)
+    for (var input of midi.inputs.values()) {
+      // console.log(input.name)
+      if (input.name === "Launchpad MK2") midiInput = input;
+    }
+
+    for (var output of midi.outputs.values()) {
+      if (output.name === "Launchpad MK2") midiOutput = output;
+    }
+
+    if (midiInput) midiInput.onmidimessage = midiProc;   
+  
+    resetBoard();
+    // generateMaze(.3);
+    
+    if (midiInput)  {
+      midiOutput.send( [0xB0,0x00,0x00] ); // Reset Launchpad
+   	  midiOutput.send( [0xB0,0x00,0x01] ); // Select XY mode
+
+     // turn off and the nset to flash a color on/off
+   	  midiOutput.send( [144, 11, 0] ); // Select XY mode
+   	  midiOutput.send( [144, coordinateToMIDINote(0,0), 32] ); // Select XY mode
+      
+    }
+  
+     // midiOutput.send( [146, 88, 32] ); // Select XY mode
+      document.querySelector('.button:nth-of-type(1)').style.background="#0ff"      
+    
+     var piece = {
+       x:0,
+       y:0
+     }
+    document.addEventListener("keydown", function(e) {
+      oldCoords = {
+        x: piece.x,
+        y: piece.y
+      }
+
+   	  if (midiOutput) midiOutput.send( [144, coordinateToMIDINote(piece.x,piece.y), 0] ); // Select XY mode
+      grid[piece.x][piece.y] = 0
+      
+        piece.x += piece.dx;
+        piece.y += piece.dy;
+      
+      if (piece.x > 7) piece.x = 7;
+      if (piece.x < 0) piece.x = 0;
+      if (piece.y > 7) piece.y = 7;
+      if (piece.y < 0) piece.y = 0;
+
+      console.log(grid,piece) 
+      if (grid[piece.x][piece.y] !== 0 && grid[piece.x][piece.y] !== undefined && grid[piece.x][piece.y] !== 15) {
+        console.log(grid[piece.x][piece.y])
+        piece.x = oldCoords.x;
+        piece.y = oldCoords.y;        
+      }else if (grid[piece.x][piece.y] === 15) {
+      }
+      
+      grid[piece.x][piece.y] = 32
+      document.querySelector('.button:nth-of-type('+(oldCoords.x+(oldCoords.y*8)+1)+')').style.background="#333"      
+      document.querySelector('.button:nth-of-type('+(piece.x+(piece.y*8)+1)+')').style.background="#0ff"      
+   	  if (midiOutput) midiOutput.send( [144, coordinateToMIDINote(piece.x,piece.y), 32] ); // Select XY mode      
+    })
+    
+  }
+  
+  
+  function coordinateToMIDINote(x,y) {
+    value = 88 - 7 + (x - (y*10));  
+    return value;
+  }
+  
+  function resetBoard() {      
+    for (var x = 0; x < 8; x++) {
+      grid[x] = [0,0,0,0,0,0,0,0]
+    }
+    
+    for (let i =0; i < 127;i++) {
+      if (midiOutput) midiOutput.send([144,i,0]); 
+    }  
+  }
+  
+  function generateMaze(complexity) {  
+    for (let y =0; y < 8;y++) {
+      for (let x =0; x < 8;x++) {
+        
+        if (Math.random() < complexity) {
+          grid[x][y] = 120;        
+          if (midiOutput) midiOutput.send([144, coordinateToMIDINote(x,y),120]);
+        document.querySelector('.button:nth-of-type('+(x+(y*8)+1)+')').style.background="#f00"                
+        }else{
+          grid[x][y] = 0        
+        }
+      }  
+    }
+    
+    let treasureX = Math.floor(Math.random()*7);
+    let treasureY = Math.floor(Math.random()*7);
+    
+    grid[treasureX][treasureY] = 15;
+    if (midiOutput)  midiOutput.send([144, coordinateToMIDINote(treasureX,treasureY),15]);
+    document.querySelector('.button:nth-of-type('+(treasureX+(treasureY*8)+1)+')').style.background="#ff0";
+    
+  }
+  
+  
+  onMIDIFail= function(){
+    console.log("Could not load MIDI");
+  }
+  
+  
+  navigator.requestMIDIAccess({}).then( onMIDIInit, onMIDIFail );
+  
+  
+  /* Webcam to show Launchpad on screen during presentation
+  ========================================================*/
+  document.getElementById('watch-board').addEventListener('click', function(){
+    navigator.mediaDevices.getUserMedia({ audio: false, video: { width: 1280, height: 720 } })
+    .then(function(mediaStream) {
+      var video = document.querySelector('video');
+      video.className = "";
+      console.log(video.className);
+      video.srcObject = mediaStream;
+      video.onloadedmetadata = function(e) {
+        video.play();
+      };
+    })
+    .catch(function(err) { console.log(err.name + ": " + err.message); });    
+  });
+  
+</script>
+  
+</body>
+</html>

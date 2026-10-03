@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PipSqueak Gray-Scott</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-family: ui-monospace, monospace; }
+    canvas { display: block; }
+    #hud { position: fixed; left: 1rem; bottom: 1rem; font-size: 13px; line-height: 1.5; color: #d0d4da; white-space: pre; pointer-events: none; text-shadow: 0 1px 2px #000, 0 0 6px #000; }
+    #panel { position: fixed; top: 1rem; right: 1rem; width: 300px; background: rgba(18, 20, 26, .94); color: #e8e8e8; border: 1px solid #333; border-radius: .75rem; padding: 1rem; font-size: 13px; box-shadow: 0 8px 30px #000a; }
+    #panel h2 { margin: 0 0 .6rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: #9aa0a6; }
+    #panel h2 + h2, #panel .row + h2 { margin-top: .9rem; }
+    .row { display: grid; grid-template-columns: 5.5rem 1fr 3.4rem; align-items: center; gap: .5rem; margin: .3rem 0; }
+    .row output { text-align: right; color: #9aa0a6; }
+    .row input[type=range] { width: 100%; }
+    select, button { font: inherit; padding: .3rem .5rem; border-radius: .4rem; border: 1px solid #444; background: #22252b; color: inherit; }
+    select { width: 100%; }
+    .actions { display: flex; gap: .5rem; margin-top: .8rem; }
+    p.help { margin: .6rem 0 0; color: #9aa0a6; line-height: 1.45; }
+  </style>
+  <script src="../launchpad-chess/vendor/p5.min.js"></script>
+</head>
+<body>
+  <div id="hud"></div>
+
+  <div id="panel" hidden>
+    <h2>Regime</h2>
+    <div class="row"><label>preset</label><select id="preset" data-key="preset"></select><span></span></div>
+    <div class="row"><label>F feed</label><input type="range" id="F" data-key="F" min="0" max="0.1" step="0.0001"><output></output></div>
+    <div class="row"><label>k kill</label><input type="range" id="k" data-key="k" min="0.03" max="0.075" step="0.0001"><output></output></div>
+    <div class="row"><label>Dv / Du</label><input type="range" id="Dv" data-key="Dv" min="0.2" max="0.8" step="0.01"><output></output></div>
+
+    <h2>Dish</h2>
+    <div class="row"><label>grid</label><select id="grid" data-key="grid"><option>64</option><option>96</option><option>128</option><option>192</option><option>256</option></select><span></span></div>
+    <div class="row"><label>speed</label><input type="range" id="steps" data-key="steps" min="1" max="24" step="1"><output></output></div>
+    <div class="row"><label>palette</label><select id="palette" data-key="palette"><option value="page">page (red / blue)</option><option value="ink">ink</option><option value="heat">heat</option><option value="ocean">ocean</option></select><span></span></div>
+
+    <h2>Stick</h2>
+    <div class="row"><label>drift rate</label><input type="range" id="rate" data-key="rate" min="0.002" max="0.03" step="0.001"><output></output></div>
+    <div class="row"><label>brush size</label><input type="range" id="brush" data-key="brush" min="1" max="12" step="1"><output></output></div>
+    <div class="row"><label>brush speed</label><input type="range" id="brushSpeed" data-key="brushSpeed" min="10" max="120" step="5"><output></output></div>
+
+    <div class="actions"><button id="reset">Reset dish</button><button id="save">Save PNG</button></div>
+    <p class="help">Stick: tune mode steers F (up/down) and k (left/right); paint mode drips activator where the cursor goes. Tap the button to switch, hold it to reset. Keyboard: arrows, space, R, 1–9 presets, D save, Esc closes this.</p>
+  </div>
+
+  <script type="module" src="sketch.js"></script>
+</body>
+</html>

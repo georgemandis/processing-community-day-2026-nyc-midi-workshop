@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PipSqueak Demo</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; padding: 1.5rem; font-family: system-ui, sans-serif; background: #14161a; color: #e8e8e8; display: grid; gap: 1rem; grid-template-columns: minmax(0, 420px) 1fr; }
+    @media (max-width: 800px) { body { grid-template-columns: 1fr; } }
+    canvas { width: 100%; max-width: 420px; aspect-ratio: 1; background: #1b1e24; border: 1px solid #333; border-radius: 1rem; }
+    h1 { grid-column: 1 / -1; margin: 0; font-size: 1.4rem; }
+    #status { grid-column: 1 / -1; color: #9aa0a6; }
+    pre { margin: 0; font-size: 1rem; line-height: 1.6; }
+    label { display: block; margin: .5rem 0; }
+    input[type=range] { width: 12rem; vertical-align: middle; }
+    button { font: inherit; padding: .4rem .8rem; border-radius: .5rem; border: 1px solid #444; background: #22252b; color: inherit; }
+  </style>
+</head>
+<body>
+  <h1>PipSqueak Demo</h1>
+  <div id="status">Connecting…</div>
+  <canvas id="pad" width="420" height="420"></canvas>
+  <div>
+    <pre id="readout"></pre>
+    <label>deadzone <input type="range" id="deadzone" min="0" max="0.5" step="0.01" value="0.1"> <span id="deadzone-v">0.10</span></label>
+    <label>smoothing <input type="range" id="smoothing" min="0.05" max="1" step="0.05" value="1"> <span id="smoothing-v">1.00</span></label>
+    <button id="recenter">Recenter (hands off)</button>
+  </div>
+
+  <script type="module">
+    import { PipSqueak } from "./pipsqueak.js";
+
+    const status = document.getElementById("status");
+    const readout = document.getElementById("readout");
+    const canvas = document.getElementById("pad");
+    const ctx = canvas.getContext("2d");
+    const trail = [];
+    let stick;
+
+    try {
+      stick = await PipSqueak.connect();
+      status.textContent = `Connected to ${stick.input.name}`;
+    } catch (e) {
+      status.textContent = e.message;
+    }
+
+    if (stick) {
+      stick.on("press", () => flash(1));
+      stick.on("release", () => flash(0));
+      for (const id of ["deadzone", "smoothing"]) {
+        const el = document.getElementById(id), out = document.getElementById(`${id}-v`);
+        el.addEventListener("input", () => { stick.config[id] = +el.value; out.textContent = (+el.value).toFixed(2); });
+      }
+      document.getElementById("recenter").addEventListener("click", async () => {
+        status.textContent = "Sampling rest position…";
+        const c = await stick.recenter(600);
+        status.textContent = `Recentered to raw x=${c.x} y=${c.y}`;
+      });
+    }
+
+    let flashLevel = 0;
+    const flash = (v) => (flashLevel = v);
+
+    function draw() {
+      requestAnimationFrame(draw);
+      const { width: w, height: h } = canvas;
+      const cx = w / 2, cy = h / 2, r = w * 0.42;
+      ctx.clearRect(0, 0, w, h);
+      // pad + deadzone ring
+      ctx.strokeStyle = "#333"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = "#444";
+      ctx.beginPath(); ctx.arc(cx, cy, r * (stick?.config.deadzone ?? 0.1), 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx - r, cy); ctx.lineTo(cx + r, cy); ctx.moveTo(cx, cy - r); ctx.lineTo(cx, cy + r); ctx.stroke();
+
+      if (!stick) return;
+      const s = stick.state;
+      const px = cx + s.x * r, py = cy - s.y * r; // y up on screen
+      trail.push([px, py]); if (trail.length > 60) trail.shift();
+      ctx.strokeStyle = "rgba(61,123,255,.5)"; ctx.lineWidth = 3;
+      ctx.beginPath(); trail.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke();
+
+      if (s.angle != null) {
+        ctx.strokeStyle = "#ffd166"; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(px, py); ctx.stroke();
+      }
+      ctx.fillStyle = s.pressed ? "#ff5d73" : "#3d7bff";
+      ctx.beginPath(); ctx.arc(px, py, 14 + flashLevel * 8, 0, Math.PI * 2); ctx.fill();
+      flashLevel *= 0.85;
+
+      const deg = s.angle == null ? "-" : ((s.angle * 180) / Math.PI).toFixed(0) + "°";
+      readout.textContent =
+        `x          ${s.x.toFixed(3)}\n` +
+        `y          ${s.y.toFixed(3)}   (+1 = up)\n` +
+        `angle      ${deg}   (0° = right, counter-clockwise positive)\n` +
+        `magnitude  ${s.magnitude.toFixed(3)}\n` +
+        `pressed    ${s.pressed}\n` +
+        `raw        cc17=${s.rawX}  cc20=${s.rawY}`;
+    }
+    draw();
+  </script>
+</body>
+</html>
